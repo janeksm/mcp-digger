@@ -525,6 +525,8 @@ Do not modify anything under `.digger/source/` or `.digger/cache/`.
 
 ## Implementation Order
 
+> **Live progress:** see [TODO.md](TODO.md) for current step status and commit history.
+
 Build and test in this sequence:
 
 1. `config.ts` — env var parsing, validation, per-package config objects
