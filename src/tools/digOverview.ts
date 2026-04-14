@@ -7,6 +7,7 @@ import {
   writeOverview,
 } from "../cacheManager.js";
 import type { DiggerConfig, PackageConfig } from "../config.js";
+import { debug } from "../logger.js";
 import { ensureReady } from "../repoManager.js";
 import { extractOverview } from "../sourceExtractor.js";
 
@@ -49,6 +50,7 @@ export function registerDigOverview(
  * Never throws — returns a usable response even when repos are unreachable.
  */
 export async function digOverview(config: DiggerConfig): Promise<string> {
+  debug("digOverview", "called");
   const sections: string[] = [];
   const warnings: string[] = [];
 

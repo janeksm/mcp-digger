@@ -1,6 +1,7 @@
 import * as child_process from "node:child_process";
 import * as util from "node:util";
 import type { GitAuth } from "./config.js";
+import { debug } from "./logger.js";
 
 const execFile = util.promisify(child_process.execFile);
 
@@ -95,6 +96,7 @@ export async function clone(
   auth: GitAuth,
   depth: number = 1,
 ): Promise<void> {
+  debug("gitClient", "clone ->", targetDir, "strategy=" + auth.strategy);
   const args = ["clone", "--depth", String(depth), "--single-branch"];
 
   if (auth.strategy === "pat") {
@@ -110,6 +112,7 @@ export async function clone(
   } catch (firstErr) {
     const retry = shouldRetryWithPat(auth, url);
     if (!retry) throw firstErr;
+    debug("gitClient", "clone: unauthenticated failed, retrying with PAT");
     await git([...args, retry.authUrl, targetDir]);
   }
 }
@@ -124,6 +127,7 @@ export async function fetch(
   auth: GitAuth,
   remoteUrl?: string,
 ): Promise<void> {
+  debug("gitClient", "fetch", repoDir, "strategy=" + auth.strategy);
   const baseArgs = ["-C", repoDir, "fetch", "--depth", "1", "origin"];
 
   if (auth.strategy === "pat" && auth.pat && remoteUrl) {
@@ -143,6 +147,7 @@ export async function fetch(
     if (!remoteUrl) throw firstErr;
     const retry = shouldRetryWithPat(auth, remoteUrl);
     if (!retry) throw firstErr;
+    debug("gitClient", "fetch: unauthenticated failed, retrying with PAT");
     await git(["-C", repoDir, "fetch", "--depth", "1", retry.authUrl, "HEAD"]);
   }
 }

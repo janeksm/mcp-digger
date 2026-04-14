@@ -15,5 +15,6 @@
 | 8 | `tools/digFile.ts` | done | 7769990 | Level 3 MCP tool — full file source |
 | 9 | `index.ts` | done | 0d86c0a | MCP server entry point, register all tools |
 | 10 | `index.ts` | — | | DRY version: read from package.json instead of hardcoding in McpServer constructor |
+| 11 | `logger.ts` | done | ce6b566 | Debug logging service: file-based, config-driven, singleton |
 
 **Statuses:** `—` not started, `in-progress` active, `done` committed, `blocked` waiting on something

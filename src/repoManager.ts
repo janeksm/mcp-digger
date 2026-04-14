@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import type { DiggerConfig, GitAuth, RepoConfig } from "./config.js";
 import { discoverPackages } from "./config.js";
 import * as gitClient from "./gitClient.js";
+import { debug } from "./logger.js";
 
 // ── Result type ──
 
@@ -32,12 +33,16 @@ export async function ensureReady(
   repoConfig: RepoConfig,
   config: DiggerConfig,
 ): Promise<RepoReadyResult> {
+  debug("repoManager", "ensureReady:", repoConfig.name,
+    "localPath=" + (repoConfig.localPath ?? "none"),
+    "url=" + (repoConfig.url ? "yes" : "none"));
   let result: RepoReadyResult;
 
   // Try Mode B (local path) first
   if (repoConfig.localPath) {
     const valid = await gitClient.isValidRepo(repoConfig.localPath);
     if (valid) {
+      debug("repoManager", repoConfig.name, "using local path");
       const currentHash = await gitClient.revParse(repoConfig.localPath, "HEAD");
       result = {
         sourcePath: repoConfig.localPath,
@@ -45,6 +50,7 @@ export async function ensureReady(
         mode: "local",
       };
     } else if (repoConfig.url) {
+      debug("repoManager", repoConfig.name, "local path invalid, falling back to managed");
       // Fallback: local path invalid but URL available → Mode A with warning
       result = await ensureManaged(repoConfig, config.auth);
       result.warning =
@@ -60,6 +66,8 @@ export async function ensureReady(
     result = await ensureManaged(repoConfig, config.auth);
   }
 
+  debug("repoManager", repoConfig.name, "ready hash=" + result.currentHash, "mode=" + result.mode);
+
   // Auto-discover packages if needed
   if (repoConfig.discoveryMode === "auto" && repoConfig.packages.length === 0) {
     const discovered = await discoverPackages(
@@ -68,6 +76,7 @@ export async function ensureReady(
       config.cacheDir,
     );
     repoConfig.packages = discovered;
+    debug("repoManager", repoConfig.name, "discovered", discovered.length, "packages");
   }
 
   return result;
@@ -103,10 +112,12 @@ async function ensureManaged(
   const alreadyCloned = await gitClient.isValidRepo(targetDir);
 
   if (!alreadyCloned) {
+    debug("repoManager", repoConfig.name, "cloning to", targetDir);
     // Remove any partial clone remnant (force: true is a no-op if path doesn't exist)
     await fs.promises.rm(targetDir, { recursive: true, force: true });
     await gitClient.clone(repoConfig.url, targetDir, auth);
   } else {
+    debug("repoManager", repoConfig.name, "fetching updates");
     await gitClient.fetch(targetDir, auth, repoConfig.url);
   }
 

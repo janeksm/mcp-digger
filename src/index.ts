@@ -3,6 +3,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./config.js";
+import { debug, initLogger } from "./logger.js";
 import { registerDigFile } from "./tools/digFile.js";
 import { registerDigOverview } from "./tools/digOverview.js";
 import { registerDigSignatures } from "./tools/digSignatures.js";
@@ -14,6 +15,9 @@ const server = new McpServer({
 
 try {
   const config = loadConfig();
+
+  initLogger({ workspaceRoot: config.workspaceRoot, debug: config.debug });
+  debug("index", "mcp-digger starting");
 
   registerDigOverview(server, config);
   registerDigSignatures(server, config);

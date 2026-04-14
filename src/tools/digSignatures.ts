@@ -9,6 +9,7 @@ import {
 } from "../cacheManager.js";
 import type { DiggerConfig } from "../config.js";
 import { findPackage, formatUnknownPackage } from "../config.js";
+import { debug } from "../logger.js";
 import { ensureReady } from "../repoManager.js";
 import { extractSignatures } from "../sourceExtractor.js";
 
@@ -62,6 +63,7 @@ export async function digSignatures(
   config: DiggerConfig,
   packageName: string,
 ): Promise<string> {
+  debug("digSignatures", "called for", packageName);
   const pkg = findPackage(config, packageName);
   if (!pkg) return formatUnknownPackage(config, packageName);
 

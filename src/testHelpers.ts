@@ -81,6 +81,7 @@ export function makeConfig(
     managedSourceDir: path.join(tmpDir, "source"),
     cacheDir: cacheDir ?? path.join(tmpDir, "cache"),
     auth: { strategy: "none" },
+    debug: false,
     repos,
     warnings: [],
   };

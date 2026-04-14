@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { DiggerConfig } from "../config.js";
 import { findPackage, formatUnknownPackage } from "../config.js";
 import { GitError, listFiles, readFile } from "../gitClient.js";
+import { debug } from "../logger.js";
 import { ensureReady } from "../repoManager.js";
 
 // ── Tool description (shown to Claude Code) ──
@@ -57,6 +58,7 @@ export async function digFile(
   packageName: string,
   filePath: string,
 ): Promise<string> {
+  debug("digFile", "called for", packageName, filePath);
   const pkg = findPackage(config, packageName);
   if (!pkg) return formatUnknownPackage(config, packageName);
 

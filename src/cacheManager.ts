@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { PackageConfig } from "./config.js";
+import { debug } from "./logger.js";
 
 // ── Meta file schema ──
 
@@ -23,7 +24,12 @@ export async function isFresh(
   currentHash: string,
 ): Promise<boolean> {
   const meta = await readMeta(cacheDir, repoName);
-  return meta !== undefined && meta.commitHash === currentHash;
+  const fresh = meta !== undefined && meta.commitHash === currentHash;
+  debug("cacheManager", "isFresh:", repoName,
+    "current=" + currentHash.slice(0, 8),
+    "cached=" + (meta?.commitHash?.slice(0, 8) ?? "none"),
+    "-> " + fresh);
+  return fresh;
 }
 
 /**
@@ -34,6 +40,7 @@ export async function markFresh(
   repoName: string,
   commitHash: string,
 ): Promise<void> {
+  debug("cacheManager", "markFresh:", repoName, commitHash.slice(0, 8));
   const metaPath = metaFilePath(cacheDir, repoName);
   await fs.promises.mkdir(path.dirname(metaPath), { recursive: true });
   const meta: RepoMeta = {
@@ -52,6 +59,7 @@ export async function invalidate(
   repoName: string,
   packages: readonly PackageConfig[],
 ): Promise<void> {
+  debug("cacheManager", "invalidate:", repoName, packages.length, "packages");
   const metaPath = metaFilePath(cacheDir, repoName);
   await fs.promises.rm(metaPath, { force: true });
 

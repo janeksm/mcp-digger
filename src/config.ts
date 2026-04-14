@@ -14,6 +14,7 @@ export interface RepoDefinition {
 
 export interface ConfigFile {
   authStrategy?: AuthStrategy; // default "auto"
+  debug?: boolean; // default false
   repos: RepoDefinition[];
 }
 
@@ -63,6 +64,7 @@ export interface DiggerConfig {
   managedSourceDir: string;
   cacheDir: string;
   auth: GitAuth;
+  debug: boolean;
   repos: RepoConfig[];
   warnings: string[];
 }
@@ -308,12 +310,20 @@ export function loadConfig(
     throw new ConfigError(errors);
   }
 
+  // ── Debug flag (env var takes precedence over config file) ──
+  const debugEnv = env.MCP_DIGGER_DEBUG?.trim().toLowerCase();
+  const debug =
+    debugEnv !== undefined
+      ? debugEnv === "1" || debugEnv === "true"
+      : configFile.debug === true;
+
   return {
     workspaceRoot: cwd,
     configPath,
     managedSourceDir,
     cacheDir,
     auth,
+    debug,
     repos,
     warnings,
   };
