@@ -12,10 +12,12 @@ Node.js/TypeScript MCP server that gives Claude Code progressive access to inter
 ```bash
 npm run build        # tsc → dist/
 npm run typecheck    # tsc --noEmit
+npm run lint         # eslint src/
 npm test             # vitest run (all tests)
 npm run test:watch   # vitest watch
-npm run lint         # eslint src/
 ```
+
+After every code change, run all three checks: `npm run typecheck && npm run lint && npm test`.
 
 Tests use `vitest`. Test helpers are in `src/testHelpers.ts` — `initRepo()` creates temp git repos, `makeConfig()`/`makeLocalRepo()`/`makePkg()` build config objects. Logger tests use `vi.resetModules()` + dynamic import for module isolation.
 
