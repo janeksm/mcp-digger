@@ -1,8 +1,2 @@
 {
-  "permissions": {
-    "allow": [
-      "Bash(npm view:*)",
-      "Bash(git:*)"
-    ]
-  }
 }

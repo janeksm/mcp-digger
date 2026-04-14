@@ -45,6 +45,7 @@
       "Bash(git reset *)",
       "Bash(git show *)",
       "Bash(git tag *)",
+      "Bash(git:*)",
       "Bash(cd *)",
       "Bash(cat *)",
       "Bash(ls *)",

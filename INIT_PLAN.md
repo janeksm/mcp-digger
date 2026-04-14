@@ -61,7 +61,6 @@ mcp-digger/                             <- this repo
 └── src/
     ├── index.ts                        <- MCP server entry point, registers all tools
     ├── config.ts                       <- JSON config file + env var parsing, repo/package config
-    ├── csprojParser.ts                 <- finds .csproj files, extracts PackageReference versions
     ├── gitClient.ts                    <- all git CLI operations via child_process
     ├── repoManager.ts                  <- manages Mode A (clone/fetch) and Mode B (local) repos
     ├── sourceExtractor.ts              <- extracts overview MD and stripped .cs from source
@@ -386,13 +385,6 @@ Two-phase configuration:
 - `findPackage(config, packageName)` — lookup a package by name across all repos
 - `findRepo(config, packageName)` — find the repo that owns a package
 
-### `csprojParser.ts`
-- Recursively find all .csproj files in workspace
-- Parse XML, extract PackageReference elements
-- Filter to packages known in config (from `DiggerConfig.repos[].packages`)
-- Handle both SDK-style and legacy .csproj formats
-- Return: Map<packageName, version>
-
 ### `gitClient.ts`
 All git via child_process.exec. No git libraries.
 
@@ -517,7 +509,6 @@ Do not modify anything under `.digger/source/` or `.digger/cache/`.
 - **Runtime**: Node.js 20+
 - **Language**: TypeScript
 - **MCP SDK**: `@modelcontextprotocol/sdk` (official Anthropic SDK)
-- **XML parsing**: `fast-xml-parser` (for .csproj)
 - **Git**: child_process.exec calling git CLI — no git libraries
 - **Distribution**: npx-compatible npm package — `npx mcp-digger`
 
@@ -527,18 +518,17 @@ Do not modify anything under `.digger/source/` or `.digger/cache/`.
 
 > **Live progress:** see [TODO.md](TODO.md) for current step status and commit history.
 
-Build and test in this sequence:
+Build and test in this sequence (core pipeline first, enhancements last):
 
 1. `config.ts` — env var parsing, validation, per-package config objects
-2. `csprojParser.ts` — workspace scan, PackageReference extraction
-3. `gitClient.ts` — all git CLI wrappers
-4. `repoManager.ts` — Mode A/B logic, ensureReady, fallback handling
-5. `cacheManager.ts` — meta.json, freshness check, cache read/write
-6. `sourceExtractor.ts` — overview MD extraction, stripped .cs generation
-7. `tools/digOverview.ts` — Level 1 tool: dig_overview
-8. `tools/digSignatures.ts` — Level 2 tool: dig_signatures
-9. `tools/digFile.ts` — Level 3 tool: dig_file
-10. `index.ts` — MCP server entry point, register all tools
+2. `gitClient.ts` — all git CLI wrappers, hybrid auth
+3. `repoManager.ts` — Mode A/B logic, ensureReady, fallback handling
+4. `cacheManager.ts` — meta.json, freshness check, cache read/write
+5. `sourceExtractor.ts` — overview MD extraction, stripped .cs generation
+6. `tools/digOverview.ts` — Level 1 tool: dig_overview
+7. `tools/digSignatures.ts` — Level 2 tool: dig_signatures
+8. `tools/digFile.ts` — Level 3 tool: dig_file
+9. `index.ts` — MCP server entry point, register all tools
 
 ---
 
