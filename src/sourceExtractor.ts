@@ -28,7 +28,7 @@ const ABSTRACT_CLASS_RE =
 export async function extractOverview(
   repoDir: string,
   pkg: PackageConfig,
-  commitHash: string,
+  _commitHash: string,
 ): Promise<string> {
   const allFiles = await listFiles(repoDir, pkg.pathInRepo + "/");
 
@@ -148,7 +148,7 @@ export async function extractSignatures(
 /**
  * Strip method and property bodies from C# source, keeping type declarations,
  * member signatures, XML doc comments, fields, constants, and attributes.
- * Method/constructor/property bodies are replaced with `{ /* ... *​/ }`.
+ * Method/constructor/property bodies are replaced with a placeholder comment block.
  *
  * Known limitations:
  * - Multi-line attribute arguments with braces may confuse the parser

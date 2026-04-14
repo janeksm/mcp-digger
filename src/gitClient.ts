@@ -148,10 +148,7 @@ export async function fetch(
 }
 
 /** Get the commit hash for a ref (e.g. "HEAD", "FETCH_HEAD"). */
-export async function revParse(
-  repoDir: string,
-  ref: string,
-): Promise<string> {
+export async function revParse(repoDir: string, ref: string): Promise<string> {
   const { stdout } = await git(["-C", repoDir, "rev-parse", ref]);
   return stdout.trim();
 }
