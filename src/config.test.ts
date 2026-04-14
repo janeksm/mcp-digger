@@ -8,6 +8,7 @@ import {
   findPackage,
   findRepo,
   loadConfig,
+  parseEnvFile,
   type ConfigFile,
   type RepoConfig,
 } from "./config.js";
@@ -449,6 +450,107 @@ describe("loadConfig — authStrategy", () => {
   it("rejects invalid authStrategy value", () => {
     const { env, cwd } = authConfig("oauth");
     expect(() => loadConfig(env, cwd)).toThrow(/Invalid authStrategy/);
+  });
+});
+
+// ── .env file loading ──
+
+describe("parseEnvFile", () => {
+  it("parses KEY=VALUE pairs", () => {
+    const result = parseEnvFile("FOO=bar\nBAZ=qux");
+    expect(result.get("FOO")).toBe("bar");
+    expect(result.get("BAZ")).toBe("qux");
+  });
+
+  it("skips blank lines and comments", () => {
+    const result = parseEnvFile("# comment\n\nFOO=bar\n  # indented comment\n");
+    expect(result.size).toBe(1);
+    expect(result.get("FOO")).toBe("bar");
+  });
+
+  it("strips double quotes from values", () => {
+    const result = parseEnvFile('FOO="hello world"');
+    expect(result.get("FOO")).toBe("hello world");
+  });
+
+  it("strips single quotes from values", () => {
+    const result = parseEnvFile("FOO='hello world'");
+    expect(result.get("FOO")).toBe("hello world");
+  });
+
+  it("handles values containing equals signs", () => {
+    const result = parseEnvFile("FOO=a=b=c");
+    expect(result.get("FOO")).toBe("a=b=c");
+  });
+
+  it("handles values containing colons (e.g. LOCAL_REPOS)", () => {
+    const result = parseEnvFile("MCP_DIGGER_LOCAL_REPOS=bsf:C:/dev/bsf,auth:C:/dev/auth");
+    expect(result.get("MCP_DIGGER_LOCAL_REPOS")).toBe("bsf:C:/dev/bsf,auth:C:/dev/auth");
+  });
+
+  it("strips inline comments for unquoted values", () => {
+    const result = parseEnvFile("FOO=bar # this is a comment");
+    expect(result.get("FOO")).toBe("bar");
+  });
+
+  it("preserves # inside quoted values", () => {
+    const result = parseEnvFile('FOO="bar # not a comment"');
+    expect(result.get("FOO")).toBe("bar # not a comment");
+  });
+
+  it("skips lines without = sign", () => {
+    const result = parseEnvFile("NOEQUALS\nFOO=bar");
+    expect(result.size).toBe(1);
+    expect(result.get("FOO")).toBe("bar");
+  });
+
+  it("trims whitespace around keys and values", () => {
+    const result = parseEnvFile("  FOO  =  bar  ");
+    expect(result.get("FOO")).toBe("bar");
+  });
+});
+
+describe("loadConfig — .env file loading", () => {
+  /** Write a .env file in tmpDir. */
+  function writeEnvFile(content: string): void {
+    fs.writeFileSync(path.join(tmpDir, ".env"), content);
+  }
+
+  it("loads env vars from .env file", () => {
+    const { env, cwd } = setupConfig(minimalConfig());
+    writeEnvFile("MCP_DIGGER_PAT=glpat-from-env-file");
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.auth.pat).toBe("glpat-from-env-file");
+  });
+
+  it("actual env vars take precedence over .env file", () => {
+    const { env, cwd } = setupConfig(minimalConfig(), {
+      MCP_DIGGER_PAT: "glpat-from-actual-env",
+    });
+    writeEnvFile("MCP_DIGGER_PAT=glpat-from-env-file");
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.auth.pat).toBe("glpat-from-actual-env");
+  });
+
+  it("works when no .env file exists", () => {
+    const { env, cwd } = setupConfig(minimalConfig());
+    // no .env file written
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.auth.pat).toBeUndefined();
+  });
+
+  it(".env debug flag is picked up when not in actual env", () => {
+    const { env, cwd } = setupConfig(minimalConfig());
+    writeEnvFile("MCP_DIGGER_DEBUG=1");
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.debug).toBe(true);
+  });
+
+  it(".env LOCAL_REPOS merges into config", () => {
+    const { env, cwd } = setupConfig(minimalConfig());
+    writeEnvFile("MCP_DIGGER_LOCAL_REPOS=bsf:C:/dev/bsf");
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.repos[0]!.localPath).toBe(path.resolve("C:/dev/bsf"));
   });
 });
 

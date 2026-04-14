@@ -59,6 +59,7 @@ Create `.mcp/mcp-config.json` in your .NET solution root:
 .digger/source/
 .digger/cache/
 .digger/debug.log
+.env
 ```
 
 ### 5. Add to your solution's `CLAUDE.md`
@@ -157,7 +158,11 @@ When `packages` is omitted, mcp-digger scans the repo for directories containing
 
 ### Environment Variables
 
-Set these per-machine (never commit):
+Set these per-machine (never commit). You can provide them via:
+
+1. **Actual environment variables** (highest priority)
+2. **`.env` file** in the .NET solution root (loaded automatically, never commit)
+3. **`.digger/config.json`** defaults (lowest priority)
 
 | Variable | Description |
 |----------|-------------|
@@ -167,6 +172,12 @@ Set these per-machine (never commit):
 | `DIGGER_CONFIG` | Override config file path (default: `.digger/config.json`) |
 | `MANAGED_SOURCE_DIR` | Override managed clone dir (default: `.digger/source`) |
 | `CACHE_DIR` | Override cache dir (default: `.digger/cache`) |
+
+A `.env.sample` file is included as a template. Copy it to `.env` and fill in your values:
+
+```bash
+cp .env.sample .env
+```
 
 ### Two Repo Modes
 

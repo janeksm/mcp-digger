@@ -50,6 +50,8 @@ src/
 
 Config file: `.digger/config.json` (path override: `DIGGER_CONFIG`).
 
+Env var precedence: actual environment > `.env` file in workspace root > config file defaults. The `.env` file is loaded automatically if present — values only fill in vars not already set in the real environment.
+
 Key env vars (per-machine, never committed):
 - `MCP_DIGGER_LOCAL_REPOS` — `repoName:path,repoName:path` (Mode B local repos)
 - `MCP_DIGGER_PAT` — git Personal Access Token

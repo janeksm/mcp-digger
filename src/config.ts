@@ -134,11 +134,80 @@ function parseKeyValueList(raw: string | undefined): Map<string, string> {
   return result;
 }
 
+// ── .env file loading ──
+
+/**
+ * Parse a `.env` file into key-value pairs.
+ * Supports `KEY=VALUE`, `# comments`, blank lines, and optional quoting
+ * (single or double quotes stripped from values). Inline comments after
+ * unquoted values are supported with ` #`.
+ */
+export function parseEnvFile(content: string): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    const eqIdx = line.indexOf("=");
+    if (eqIdx < 0) continue;
+
+    const key = line.slice(0, eqIdx).trim();
+    if (!key) continue;
+
+    let value = line.slice(eqIdx + 1).trim();
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    } else {
+      const commentIdx = value.indexOf(" #");
+      if (commentIdx >= 0) {
+        value = value.slice(0, commentIdx).trimEnd();
+      }
+    }
+
+    result.set(key, value);
+  }
+  return result;
+}
+
+/**
+ * Load `.env` file from the workspace root and merge into env vars.
+ * Actual environment variables take precedence — `.env` only fills in
+ * values that are not already set.
+ *
+ * Returns a new object; the original `env` is not mutated.
+ */
+function mergeEnvFile(env: NodeJS.ProcessEnv, cwd: string): NodeJS.ProcessEnv {
+  const envFilePath = path.join(cwd, ".env");
+  let content: string;
+  try {
+    content = fs.readFileSync(envFilePath, "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return env;
+    throw err;
+  }
+
+  const fileVars = parseEnvFile(content);
+  const merged: NodeJS.ProcessEnv = { ...env };
+  for (const [key, value] of fileVars) {
+    if (merged[key] === undefined) {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
 // ── Phase 1: loadConfig (synchronous, at startup) ──
 
 /**
  * Read `.digger/config.json` (or path from `DIGGER_CONFIG` env var), merge
  * per-machine env vars, and return a validated {@link DiggerConfig}.
+ *
+ * If a `.env` file exists in `cwd`, its values are loaded as defaults —
+ * actual environment variables always take precedence.
  *
  * For repos with explicit `packages` arrays, {@link PackageConfig} entries are
  * built immediately. For repos without (auto-discover), `packages` starts empty
@@ -147,9 +216,11 @@ function parseKeyValueList(raw: string | undefined): Map<string, string> {
  * Throws {@link ConfigError} aggregating every validation problem found.
  */
 export function loadConfig(
-  env: NodeJS.ProcessEnv = process.env,
+  rawEnv: NodeJS.ProcessEnv = process.env,
   cwd: string = process.cwd(),
 ): DiggerConfig {
+  const env = mergeEnvFile(rawEnv, cwd);
+
   const errors: string[] = [];
   const warnings: string[] = [];
 
