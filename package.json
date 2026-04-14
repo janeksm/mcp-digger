@@ -1,0 +1,31 @@
+{
+  "name": "mcp-digger",
+  "version": "0.0.1",
+  "description": "MCP server providing Claude Code with progressive, on-demand access to internal .NET NuGet shared library source.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "mcp-digger": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "fast-xml-parser": "^5.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}
