@@ -12,7 +12,7 @@
 | 5 | `sourceExtractor.ts` | done | 7680f91 | Overview markdown generation, .cs signature stripping |
 | 6 | `tools/digOverview.ts` | done | 4601bf1 | Level 1 MCP tool — package overview |
 | 7 | `tools/digSignatures.ts` | done | 10ad449 | Level 2 MCP tool — stripped public signatures |
-| 8 | `tools/digFile.ts` | — | | Level 3 MCP tool — full file source |
+| 8 | `tools/digFile.ts` | done | 7769990 | Level 3 MCP tool — full file source |
 | 9 | `index.ts` | — | | MCP server entry point, register all tools |
 
 **Statuses:** `—` not started, `in-progress` active, `done` committed, `blocked` waiting on something

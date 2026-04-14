@@ -398,3 +398,16 @@ export function findRepo(
   }
   return undefined;
 }
+
+/** Format an error message for an unknown package name. */
+export function formatUnknownPackage(
+  config: DiggerConfig,
+  packageName: string,
+): string {
+  const available = config.repos
+    .flatMap((r) => r.packages)
+    .map((p) => p.name);
+  return available.length > 0
+    ? `Unknown package '${packageName}'. Available packages:\n${available.map((n) => `- ${n}`).join("\n")}`
+    : `Unknown package '${packageName}'. No packages are configured.`;
+}

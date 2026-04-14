@@ -8,7 +8,7 @@ import {
   writeSignature,
 } from "../cacheManager.js";
 import type { DiggerConfig } from "../config.js";
-import { findPackage } from "../config.js";
+import { findPackage, formatUnknownPackage } from "../config.js";
 import { ensureReady } from "../repoManager.js";
 import { extractSignatures } from "../sourceExtractor.js";
 
@@ -63,14 +63,7 @@ export async function digSignatures(
   packageName: string,
 ): Promise<string> {
   const pkg = findPackage(config, packageName);
-  if (!pkg) {
-    const available = config.repos
-      .flatMap((r) => r.packages)
-      .map((p) => p.name);
-    return available.length > 0
-      ? `Unknown package '${packageName}'. Available packages:\n${available.map((n) => `- ${n}`).join("\n")}`
-      : `Unknown package '${packageName}'. No packages are configured.`;
-  }
+  if (!pkg) return formatUnknownPackage(config, packageName);
 
   const repo = config.repos.find((r) => r.name === pkg.repoName)!;
 
