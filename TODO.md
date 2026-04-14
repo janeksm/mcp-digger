@@ -7,7 +7,7 @@
 |------|--------|--------|--------|-------|
 | 1 | `config.ts` | done | b9f5d02 | Config file parsing, env merging, validation, auth strategy |
 | 2 | `gitClient.ts` | done | f45eb90 | Git CLI wrappers, hybrid auth (unauthenticated-first + PAT fallback) |
-| 3 | `repoManager.ts` | — | | Mode A/B logic, ensureReady, discoverPackages for auto repos |
+| 3 | `repoManager.ts` | done | 0a7ead6 | Mode A/B logic, ensureReady, discoverPackages for auto repos |
 | 4 | `cacheManager.ts` | — | | Per-repo meta.json, freshness by commit hash, cache read/write |
 | 5 | `sourceExtractor.ts` | — | | Overview markdown generation, .cs signature stripping |
 | 6 | `tools/digOverview.ts` | — | | Level 1 MCP tool — package overview |

@@ -15,6 +15,7 @@ import {
   readFile,
   revParse,
 } from "./gitClient.js";
+import { createBareRepo, initRepo } from "./testHelpers.js";
 
 const execFile = util.promisify(child_process.execFile);
 
@@ -33,41 +34,8 @@ afterEach(() => {
 const noAuth: GitAuth = { strategy: "none" };
 const autoAuth: GitAuth = { strategy: "auto" };
 
-/** Init a git repo with one commit containing the given files. */
-async function initRepo(
-  files: Record<string, string>,
-): Promise<string> {
-  const repoDir = path.join(tmpDir, "repo-" + Math.random().toString(36).slice(2));
-  fs.mkdirSync(repoDir, { recursive: true });
-
-  await execFile("git", ["init", repoDir]);
-  await execFile("git", ["-C", repoDir, "config", "user.email", "test@test.com"]);
-  await execFile("git", ["-C", repoDir, "config", "user.name", "Test"]);
-
-  for (const [filePath, content] of Object.entries(files)) {
-    const fullPath = path.join(repoDir, filePath);
-    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-    fs.writeFileSync(fullPath, content);
-  }
-
-  await execFile("git", ["-C", repoDir, "add", "."]);
-  await execFile("git", ["-C", repoDir, "commit", "-m", "initial"]);
-
-  return repoDir;
-}
-
-/** Create a non-bare git repo with one commit. */
-async function createRepo(files: Record<string, string>): Promise<string> {
-  return initRepo(files);
-}
-
-/** Create a bare git repo with one commit containing the given files. */
-async function createBareRepo(files: Record<string, string>): Promise<string> {
-  const workDir = await initRepo(files);
-  const bareDir = path.join(tmpDir, "bare-" + Math.random().toString(36).slice(2) + ".git");
-  await execFile("git", ["clone", "--bare", workDir, bareDir]);
-  return bareDir;
-}
+const createRepo = (files: Record<string, string>) => initRepo(tmpDir, files);
+const createBare = (files: Record<string, string>) => createBareRepo(tmpDir, files);
 
 // ── injectPat ──
 
@@ -107,7 +75,7 @@ describe("injectPat", () => {
 
 describe("clone", () => {
   it("clones a local bare repo", async () => {
-    const bareDir = await createBareRepo({ "hello.txt": "world" });
+    const bareDir = await createBare({ "hello.txt": "world" });
     const cloneDir = path.join(tmpDir, "cloned");
 
     await clone(bareDir, cloneDir, noAuth);
@@ -117,7 +85,7 @@ describe("clone", () => {
   });
 
   it("clones with specified depth", async () => {
-    const bareDir = await createBareRepo({ "file.txt": "content" });
+    const bareDir = await createBare({ "file.txt": "content" });
     const cloneDir = path.join(tmpDir, "shallow");
 
     await clone(bareDir, cloneDir, noAuth, 1);
@@ -133,7 +101,7 @@ describe("clone", () => {
   });
 
   it("with strategy 'auto' succeeds on accessible repo without PAT", async () => {
-    const bareDir = await createBareRepo({ "a.txt": "ok" });
+    const bareDir = await createBare({ "a.txt": "ok" });
     const cloneDir = path.join(tmpDir, "auto-clone");
 
     await clone(bareDir, cloneDir, autoAuth);
@@ -143,7 +111,7 @@ describe("clone", () => {
 
   it("with strategy 'pat' uses url directly when no PAT (non-HTTPS)", async () => {
     // Local file paths aren't HTTPS, so injectPat returns undefined → uses original URL
-    const bareDir = await createBareRepo({ "b.txt": "ok" });
+    const bareDir = await createBare({ "b.txt": "ok" });
     const cloneDir = path.join(tmpDir, "pat-clone");
     const patAuth: GitAuth = { strategy: "pat", pat: "fake-token" };
 
@@ -157,7 +125,7 @@ describe("clone", () => {
 
 describe("fetch", () => {
   it("fetches latest changes from origin", async () => {
-    const bareDir = await createBareRepo({ "file.txt": "v1" });
+    const bareDir = await createBare({ "file.txt": "v1" });
     const cloneDir = path.join(tmpDir, "to-fetch");
     await clone(bareDir, cloneDir, noAuth);
 
