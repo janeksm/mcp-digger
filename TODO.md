@@ -10,7 +10,7 @@
 | 3 | `repoManager.ts` | done | 0a7ead6 | Mode A/B logic, ensureReady, discoverPackages for auto repos |
 | 4 | `cacheManager.ts` | done | db8549f | Per-repo meta.json, freshness by commit hash, cache read/write |
 | 5 | `sourceExtractor.ts` | done | 7680f91 | Overview markdown generation, .cs signature stripping |
-| 6 | `tools/digOverview.ts` | — | | Level 1 MCP tool — package overview |
+| 6 | `tools/digOverview.ts` | done | 4601bf1 | Level 1 MCP tool — package overview |
 | 7 | `tools/digSignatures.ts` | — | | Level 2 MCP tool — stripped public signatures |
 | 8 | `tools/digFile.ts` | — | | Level 3 MCP tool — full file source |
 | 9 | `index.ts` | — | | MCP server entry point, register all tools |
