@@ -80,7 +80,8 @@
       "Bash(xargs grep:*)",
       "Bash(wkhtmltopdf *)",
       "Bash(pandoc *)",
-      "Bash(npm view:*)"
+      "Bash(npm view:*)",
+      "Bash(node:*)"
     ],
     "deny": [
       "Bash(rm -rf *)",
