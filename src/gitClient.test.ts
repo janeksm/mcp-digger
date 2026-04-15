@@ -285,3 +285,57 @@ describe("GitError", () => {
     }
   });
 });
+
+// ── PAT redaction on clone/fetch errors ──
+
+describe("PAT redaction", () => {
+  const PAT = "glpat-SECRET-TOKEN-xyz123";
+
+  it("redacts PAT from clone error message when strategy='pat'", async () => {
+    // Unreachable HTTPS URL so clone fails and git stderr echoes the auth URL
+    const unreachable = "https://nonexistent.invalid.example/repo.git";
+    const cloneDir = path.join(tmpDir, "pat-fail");
+    const patAuth: GitAuth = { strategy: "pat", pat: PAT };
+
+    try {
+      await clone(unreachable, cloneDir, patAuth);
+      expect.fail("clone should have failed");
+    } catch (err) {
+      expect(err).toBeInstanceOf(GitError);
+      const gitErr = err as GitError;
+      // The PAT must not appear anywhere in the surfaced error
+      expect(gitErr.message).not.toContain(PAT);
+      expect(gitErr.stderr).not.toContain(PAT);
+    }
+  });
+
+  it("redacts PAT on the auto-strategy PAT retry", async () => {
+    // Unreachable HTTPS URL — unauthenticated attempt fails (unredacted, no PAT
+    // in URL so nothing to leak), then PAT retry fails and must redact.
+    const unreachable = "https://nonexistent.invalid.example/repo.git";
+    const cloneDir = path.join(tmpDir, "auto-pat-fail");
+    const autoWithPat: GitAuth = { strategy: "auto", pat: PAT };
+
+    try {
+      await clone(unreachable, cloneDir, autoWithPat);
+      expect.fail("clone should have failed");
+    } catch (err) {
+      expect(err).toBeInstanceOf(GitError);
+      const gitErr = err as GitError;
+      expect(gitErr.message).not.toContain(PAT);
+      expect(gitErr.stderr).not.toContain(PAT);
+    }
+  });
+
+  it("does not affect errors when no PAT is used", async () => {
+    // Plain error path — unchanged behaviour, no PAT involved
+    const cloneDir = path.join(tmpDir, "noauth-fail");
+    try {
+      await clone("/nonexistent/repo.git", cloneDir, noAuth);
+      expect.fail("clone should have failed");
+    } catch (err) {
+      expect(err).toBeInstanceOf(GitError);
+      expect((err as GitError).message).toContain("failed");
+    }
+  });
+});

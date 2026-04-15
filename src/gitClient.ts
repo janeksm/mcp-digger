@@ -49,6 +49,28 @@ async function git(
 }
 
 /**
+ * Run `git()` and, on failure, replace every occurrence of `pat` in the error
+ * message and stderr with `[REDACTED-PAT]`. Use for commands that embed a PAT
+ * in a URL argument — git's error output routinely echoes the attempted URL,
+ * which would otherwise leak the token to callers and logs.
+ */
+async function gitRedacted(
+  args: string[],
+  pat: string,
+  cwd?: string,
+): Promise<{ stdout: string; stderr: string }> {
+  try {
+    return await git(args, cwd);
+  } catch (err) {
+    if (pat && err instanceof GitError) {
+      const redact = (s: string) => s.replaceAll(pat, "[REDACTED-PAT]");
+      throw new GitError(redact(err.message), err.exitCode, redact(err.stderr));
+    }
+    throw err;
+  }
+}
+
+/**
  * Inject PAT into an HTTPS URL: `https://host/path` → `https://oauth2:<pat>@host/path`.
  * Returns undefined for non-HTTPS URLs (SSH, file://, etc.).
  */
@@ -72,12 +94,12 @@ export function injectPat(url: string, pat: string): string | undefined {
 function shouldRetryWithPat(
   auth: GitAuth,
   url: string,
-): { authUrl: string } | undefined {
+): { authUrl: string; pat: string } | undefined {
   if (auth.strategy === "none") return undefined;
   if (!auth.pat) return undefined;
   const authUrl = injectPat(url, auth.pat);
   if (!authUrl) return undefined;
-  return { authUrl };
+  return { authUrl, pat: auth.pat };
 }
 
 // ── Public API ──
@@ -101,7 +123,11 @@ export async function clone(
 
   if (auth.strategy === "pat") {
     const authUrl = auth.pat ? injectPat(url, auth.pat) : undefined;
-    await git([...args, authUrl ?? url, targetDir]);
+    if (authUrl && auth.pat) {
+      await gitRedacted([...args, authUrl, targetDir], auth.pat);
+    } else {
+      await git([...args, url, targetDir]);
+    }
     return;
   }
 
@@ -113,7 +139,7 @@ export async function clone(
     const retry = shouldRetryWithPat(auth, url);
     if (!retry) throw firstErr;
     debug("gitClient", "clone: unauthenticated failed, retrying with PAT");
-    await git([...args, retry.authUrl, targetDir]);
+    await gitRedacted([...args, retry.authUrl, targetDir], retry.pat);
   }
 }
 
@@ -134,7 +160,10 @@ export async function fetch(
     const authUrl = injectPat(remoteUrl, auth.pat);
     if (authUrl) {
       // Fetch using explicit auth URL instead of the configured remote
-      await git(["-C", repoDir, "fetch", "--depth", "1", authUrl, "HEAD"]);
+      await gitRedacted(
+        ["-C", repoDir, "fetch", "--depth", "1", authUrl, "HEAD"],
+        auth.pat,
+      );
       return;
     }
   }
@@ -148,7 +177,10 @@ export async function fetch(
     const retry = shouldRetryWithPat(auth, remoteUrl);
     if (!retry) throw firstErr;
     debug("gitClient", "fetch: unauthenticated failed, retrying with PAT");
-    await git(["-C", repoDir, "fetch", "--depth", "1", retry.authUrl, "HEAD"]);
+    await gitRedacted(
+      ["-C", repoDir, "fetch", "--depth", "1", retry.authUrl, "HEAD"],
+      retry.pat,
+    );
   }
 }
 

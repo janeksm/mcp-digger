@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { DiggerConfig } from "../config.js";
@@ -62,11 +63,16 @@ export async function digFile(
   const pkg = findPackage(config, packageName);
   if (!pkg) return formatUnknownPackage(config, packageName);
 
+  const safeFilePath = normalizeFilePath(filePath);
+  if (!safeFilePath) {
+    return `# ${packageName} — ${filePath}\n\nInvalid file path. Paths must be relative to the package root and cannot escape it (no absolute paths, '..' segments, backslashes, or null bytes).`;
+  }
+
   const repo = config.repos.find((r) => r.name === pkg.repoName)!;
 
   try {
     const result = await ensureReady(repo, config);
-    const fullPath = `${pkg.pathInRepo}/${filePath}`;
+    const fullPath = `${pkg.pathInRepo}/${safeFilePath}`;
 
     try {
       const content = await readFile(result.sourcePath, fullPath);
@@ -86,6 +92,26 @@ export async function digFile(
 }
 
 // ── Internal ──
+
+/**
+ * Validate and normalize a caller-supplied file path so it cannot escape the
+ * package's directory. Rejects absolute paths, `..` escapes, null bytes, and
+ * backslashes (git pathspecs use forward slashes; allowing backslash could
+ * bypass traversal checks on Windows). Returns the normalized relative path,
+ * or undefined if the input is unsafe.
+ */
+function normalizeFilePath(filePath: string): string | undefined {
+  if (!filePath) return undefined;
+  if (filePath.includes("\0")) return undefined;
+  if (filePath.includes("\\")) return undefined;
+  if (path.posix.isAbsolute(filePath)) return undefined;
+
+  const normalized = path.posix.normalize(filePath);
+  if (normalized === "." || normalized === "..") return undefined;
+  if (normalized.startsWith("../")) return undefined;
+
+  return normalized;
+}
 
 function formatFile(
   packageName: string,

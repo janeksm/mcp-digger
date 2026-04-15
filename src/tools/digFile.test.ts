@@ -144,6 +144,60 @@ describe("invalid file path", () => {
   });
 });
 
+// ── Path traversal protection ──
+
+describe("path traversal protection", () => {
+  const traversalCases = [
+    { name: "parent directory escape", input: "../../../etc/passwd" },
+    { name: "sibling package escape", input: "../OtherPkg/Service.cs" },
+    { name: "normalized escape via subdir", input: "sub/../../../outside.cs" },
+    { name: "absolute POSIX path", input: "/etc/passwd" },
+    { name: "backslash traversal", input: "..\\..\\evil" },
+    { name: "null byte injection", input: "File.cs\0.txt" },
+    { name: "current directory", input: "." },
+    { name: "parent directory only", input: ".." },
+    { name: "empty string", input: "" },
+  ];
+
+  for (const { name, input } of traversalCases) {
+    it(`rejects ${name}: ${JSON.stringify(input)}`, async () => {
+      const cacheDir = path.join(tmpDir, "cache");
+      const repoDir = await initRepo(tmpDir, {
+        "src/MyLib/Service.cs": "namespace MyLib;",
+        "src/OtherPkg/Secret.cs": "namespace OtherPkg; // secret",
+      });
+
+      const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+      const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+      const config = makeConfig([repo], tmpDir, cacheDir);
+
+      const result = await digFile(config, "MyLib", input);
+
+      expect(result).toContain("Invalid file path");
+      // Must not leak contents of a sibling package
+      expect(result).not.toContain("secret");
+      expect(result).not.toContain("namespace OtherPkg");
+    });
+  }
+
+  it("accepts normalized paths that stay within the package", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/Models/User.cs": "public class User { }",
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    // `sub/../Models/User.cs` → `Models/User.cs` after normalization
+    const result = await digFile(config, "MyLib", "sub/../Models/User.cs");
+
+    expect(result).not.toContain("Invalid file path");
+    expect(result).toContain("public class User");
+  });
+});
+
 // ── Error handling ──
 
 describe("error handling", () => {
