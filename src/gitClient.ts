@@ -23,15 +23,20 @@ export class GitError extends Error {
 
 // ── Internal helpers ──
 
+/** @param opts.noPrompt Suppress credential helpers (GIT_TERMINAL_PROMPT=0, GCM_INTERACTIVE=never) so git fails fast instead of blocking on prompts. */
 async function git(
   args: string[],
   cwd?: string,
+  opts?: { noPrompt?: boolean },
 ): Promise<{ stdout: string; stderr: string }> {
   try {
     return await execFile("git", args, {
       cwd,
       maxBuffer: MAX_BUFFER,
       windowsHide: true,
+      ...(opts?.noPrompt && {
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" },
+      }),
     });
   } catch (err) {
     const e = err as child_process.ExecFileException & {
@@ -58,9 +63,10 @@ async function gitRedacted(
   args: string[],
   pat: string,
   cwd?: string,
+  opts?: { noPrompt?: boolean },
 ): Promise<{ stdout: string; stderr: string }> {
   try {
-    return await git(args, cwd);
+    return await git(args, cwd, opts);
   } catch (err) {
     if (pat && err instanceof GitError) {
       const redact = (s: string) => s.replaceAll(pat, "[REDACTED-PAT]");
@@ -133,7 +139,7 @@ export async function clone(
 
   // strategy "auto" or "none": try unauthenticated first
   try {
-    await git([...args, url, targetDir]);
+    await git([...args, url, targetDir], undefined, { noPrompt: true });
     return;
   } catch (firstErr) {
     const retry = shouldRetryWithPat(auth, url);
@@ -170,7 +176,7 @@ export async function fetch(
 
   // strategy "auto" or "none": try unauthenticated first
   try {
-    await git(baseArgs);
+    await git(baseArgs, undefined, { noPrompt: true });
     return;
   } catch (firstErr) {
     if (!remoteUrl) throw firstErr;

@@ -17,6 +17,7 @@
 | 11 | `logger.ts` | done | ce6b566 | Debug logging service: file-based, config-driven, singleton |
 | 12 | `config.ts` | done | f92833f | .env file loading: env > .env > config defaults, .env.sample template |
 | 13 | `gitClient.ts`, `tools/digFile.ts` | done | eda3f53 | Security: PAT redaction in git errors + dig_file path traversal validation. Remaining findings tracked in [TODO.SEC.md](TODO.SEC.md) |
+| 14 | `gitClient.ts` | done | 154e09d | Suppress GCM/credential prompts on auto strategy unauthenticated attempt |
 | 10 | `index.ts` | — | | DRY version: read from package.json instead of hardcoding in McpServer constructor |
 
 **Statuses:** `—` not started, `in-progress` active, `done` committed, `blocked` waiting on something
