@@ -33,6 +33,9 @@ Finalize the current implementation step by committing and updating TODO.md.
    - Change the step's status from `in-progress` to `done`
    - Add the commit hash (short) to the step's entry
    - **Reorder rows** so all `done` steps appear first (sorted by step number), followed by any not-finished steps (`—`, `in-progress`, `blocked`) at the bottom
-   - Stage and amend the commit to include the TODO.md update: `git add TODO.md && git commit --amend --no-edit`
 
-6. **Report.** Show the final commit hash and the updated TODO.md status.
+6. **Update DESIGN.md.** If the committed changes affect the MCP server design (new/changed/removed tools, transport, annotations, input schemas, tool descriptions, interaction patterns, or shared conventions), update `DESIGN.md` to reflect the current state. Keep the existing structure and only change what's relevant. Skip this step if the changes are purely internal (bug fixes, refactors, tests) with no impact on the MCP tool surface.
+
+7. **Amend commit with doc updates.** Stage the doc files and amend: `git add TODO.md DESIGN.md && git commit --amend --no-edit`
+
+8. **Report.** Show the final commit hash and the updated TODO.md status.

@@ -12,6 +12,7 @@ import {
   injectPat,
   isValidRepo,
   listFiles,
+  lsRemote,
   readFile,
   revParse,
 } from "./gitClient.js";
@@ -337,5 +338,71 @@ describe("PAT redaction", () => {
       expect(err).toBeInstanceOf(GitError);
       expect((err as GitError).message).toContain("failed");
     }
+  });
+});
+
+// ── lsRemote ──
+
+describe("lsRemote", () => {
+  it("returns reachable with ref count for a local bare repo", async () => {
+    const bareDir = await createBare({ "file.txt": "content" });
+
+    const result = await lsRemote(bareDir, noAuth);
+
+    expect(result.reachable).toBe(true);
+    expect(result.refCount).toBeGreaterThanOrEqual(1);
+    expect(result.error).toBeUndefined();
+    expect(result.attempts).toContain("unauthenticated");
+  });
+
+  it("returns unreachable with error for nonexistent path", async () => {
+    const result = await lsRemote("/nonexistent/repo.git", noAuth);
+
+    expect(result.reachable).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(result.error).toContain("failed");
+  });
+
+  it("tracks attempts for auto strategy", async () => {
+    const bareDir = await createBare({ "file.txt": "content" });
+
+    const result = await lsRemote(bareDir, autoAuth);
+
+    expect(result.reachable).toBe(true);
+    expect(result.attempts).toContain("unauthenticated");
+  });
+
+  it("reports isHttps correctly", async () => {
+    const bareDir = await createBare({ "file.txt": "x" });
+
+    const localResult = await lsRemote(bareDir, noAuth);
+    expect(localResult.isHttps).toBe(false);
+
+    // Unreachable HTTPS URL to test isHttps=true
+    const httpsResult = await lsRemote("https://nonexistent.invalid.example/repo.git", noAuth);
+    expect(httpsResult.isHttps).toBe(true);
+  });
+
+  it("redacts PAT from error when strategy is pat", async () => {
+    const PAT = "glpat-SECRET-LSREMOTE-xyz";
+    const patAuth: GitAuth = { strategy: "pat", pat: PAT };
+
+    const result = await lsRemote("https://nonexistent.invalid.example/repo.git", patAuth);
+
+    expect(result.reachable).toBe(false);
+    expect(result.error).not.toContain(PAT);
+    expect(result.attempts).toContain("pat");
+  });
+
+  it("redacts PAT from error on auto-strategy retry", async () => {
+    const PAT = "glpat-SECRET-AUTO-xyz";
+    const autoWithPat: GitAuth = { strategy: "auto", pat: PAT };
+
+    const result = await lsRemote("https://nonexistent.invalid.example/repo.git", autoWithPat);
+
+    expect(result.reachable).toBe(false);
+    expect(result.error).not.toContain(PAT);
+    expect(result.attempts).toContain("unauthenticated");
+    expect(result.attempts).toContain("pat");
   });
 });

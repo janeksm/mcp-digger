@@ -108,6 +108,14 @@ function shouldRetryWithPat(
   return { authUrl, pat: auth.pat };
 }
 
+/** Human-readable reason why PAT fallback was not attempted. Used in debug logs. */
+function noPatFallbackReason(auth: GitAuth, isHttps: boolean): string {
+  if (auth.strategy === "none") return "strategy=none";
+  if (!auth.pat) return "PAT not configured";
+  if (!isHttps) return "URL not HTTPS — cannot inject PAT";
+  return "unknown";
+}
+
 // ── Public API ──
 
 /**
@@ -124,15 +132,19 @@ export async function clone(
   auth: GitAuth,
   depth: number = 1,
 ): Promise<void> {
-  debug("gitClient", "clone ->", targetDir, "strategy=" + auth.strategy);
+  const isHttps = url.startsWith("https://") || url.startsWith("https:");
+  debug("gitClient", "clone ->", targetDir,
+    `strategy=${auth.strategy} pat=${auth.pat ? "yes" : "no"} https=${isHttps}`);
   const args = ["clone", "--depth", String(depth), "--single-branch"];
 
   if (auth.strategy === "pat") {
     const authUrl = auth.pat ? injectPat(url, auth.pat) : undefined;
     if (authUrl && auth.pat) {
       await gitRedacted([...args, authUrl, targetDir], auth.pat);
+      debug("gitClient", "clone: success (authenticated via PAT)");
     } else {
       await git([...args, url, targetDir]);
+      debug("gitClient", "clone: success (PAT strategy but no injection possible)");
     }
     return;
   }
@@ -140,12 +152,18 @@ export async function clone(
   // strategy "auto" or "none": try unauthenticated first
   try {
     await git([...args, url, targetDir], undefined, { noPrompt: true });
+    debug("gitClient", "clone: success (unauthenticated)");
     return;
   } catch (firstErr) {
+    const errMsg = firstErr instanceof GitError ? firstErr.message : String(firstErr);
     const retry = shouldRetryWithPat(auth, url);
-    if (!retry) throw firstErr;
-    debug("gitClient", "clone: unauthenticated failed, retrying with PAT");
+    if (!retry) {
+      debug("gitClient", `clone: unauthenticated failed: ${errMsg}, no PAT fallback (${noPatFallbackReason(auth, isHttps)})`);
+      throw firstErr;
+    }
+    debug("gitClient", `clone: unauthenticated failed: ${errMsg}, retrying with PAT`);
     await gitRedacted([...args, retry.authUrl, targetDir], retry.pat);
+    debug("gitClient", "clone: success (authenticated via PAT after retry)");
   }
 }
 
@@ -159,7 +177,9 @@ export async function fetch(
   auth: GitAuth,
   remoteUrl?: string,
 ): Promise<void> {
-  debug("gitClient", "fetch", repoDir, "strategy=" + auth.strategy);
+  const isHttps = remoteUrl ? (remoteUrl.startsWith("https://") || remoteUrl.startsWith("https:")) : false;
+  debug("gitClient", "fetch", repoDir,
+    `strategy=${auth.strategy} pat=${auth.pat ? "yes" : "no"} https=${isHttps}`);
   const baseArgs = ["-C", repoDir, "fetch", "--depth", "1", "origin"];
 
   if (auth.strategy === "pat" && auth.pat && remoteUrl) {
@@ -170,6 +190,7 @@ export async function fetch(
         ["-C", repoDir, "fetch", "--depth", "1", authUrl, "HEAD"],
         auth.pat,
       );
+      debug("gitClient", "fetch: success (authenticated via PAT)");
       return;
     }
   }
@@ -177,16 +198,25 @@ export async function fetch(
   // strategy "auto" or "none": try unauthenticated first
   try {
     await git(baseArgs, undefined, { noPrompt: true });
+    debug("gitClient", "fetch: success (unauthenticated)");
     return;
   } catch (firstErr) {
-    if (!remoteUrl) throw firstErr;
+    const errMsg = firstErr instanceof GitError ? firstErr.message : String(firstErr);
+    if (!remoteUrl) {
+      debug("gitClient", `fetch: unauthenticated failed: ${errMsg}, no remoteUrl for PAT retry`);
+      throw firstErr;
+    }
     const retry = shouldRetryWithPat(auth, remoteUrl);
-    if (!retry) throw firstErr;
-    debug("gitClient", "fetch: unauthenticated failed, retrying with PAT");
+    if (!retry) {
+      debug("gitClient", `fetch: unauthenticated failed: ${errMsg}, no PAT fallback (${noPatFallbackReason(auth, isHttps)})`);
+      throw firstErr;
+    }
+    debug("gitClient", `fetch: unauthenticated failed: ${errMsg}, retrying with PAT`);
     await gitRedacted(
       ["-C", repoDir, "fetch", "--depth", "1", retry.authUrl, "HEAD"],
       retry.pat,
     );
+    debug("gitClient", "fetch: success (authenticated via PAT after retry)");
   }
 }
 
@@ -230,4 +260,84 @@ export async function listFiles(
     .trimEnd()
     .split("\n")
     .filter((l) => l.length > 0);
+}
+
+// ── Connectivity check ──
+
+export interface LsRemoteResult {
+  reachable: boolean;
+  /** Number of branch refs found (only set when reachable). */
+  refCount?: number;
+  /** Error message when not reachable (PAT-redacted). */
+  error?: string;
+  /** Which auth methods were attempted, in order. */
+  attempts: Array<"unauthenticated" | "pat">;
+  /** True when URL is HTTPS (PAT injection possible). */
+  isHttps: boolean;
+}
+
+/**
+ * Lightweight connectivity check via `git ls-remote --heads`.
+ *
+ * Never throws — returns a result object indicating reachability.
+ * Auth behaviour mirrors {@link clone}: auto tries unauthenticated first
+ * with PAT fallback, pat injects immediately, none skips credentials.
+ */
+export async function lsRemote(url: string, auth: GitAuth): Promise<LsRemoteResult> {
+  const isHttps = url.startsWith("https://") || url.startsWith("https:");
+  const attempts: LsRemoteResult["attempts"] = [];
+  debug("gitClient", `lsRemote: checking ${url} strategy=${auth.strategy} pat=${auth.pat ? "yes" : "no"} https=${isHttps}`);
+
+  const countRefs = (stdout: string): number =>
+    stdout.trimEnd().split("\n").filter((l) => l.length > 0).length;
+
+  try {
+    // strategy "pat": inject PAT immediately
+    if (auth.strategy === "pat") {
+      const authUrl = auth.pat ? injectPat(url, auth.pat) : undefined;
+      if (authUrl && auth.pat) {
+        attempts.push("pat");
+        const { stdout } = await gitRedacted(
+          ["ls-remote", "--heads", authUrl], auth.pat, undefined, { noPrompt: true },
+        );
+        const refCount = countRefs(stdout);
+        debug("gitClient", `lsRemote: reachable, ${refCount} branch refs (authenticated via PAT)`);
+        return { reachable: true, refCount, attempts, isHttps };
+      }
+      // PAT strategy but cannot inject — try without
+      attempts.push("unauthenticated");
+      const { stdout } = await git(["ls-remote", "--heads", url], undefined, { noPrompt: true });
+      const refCount = countRefs(stdout);
+      debug("gitClient", `lsRemote: reachable, ${refCount} branch refs (PAT strategy but no injection)`);
+      return { reachable: true, refCount, attempts, isHttps };
+    }
+
+    // strategy "auto" or "none": try unauthenticated first
+    attempts.push("unauthenticated");
+    try {
+      const { stdout } = await git(["ls-remote", "--heads", url], undefined, { noPrompt: true });
+      const refCount = countRefs(stdout);
+      debug("gitClient", `lsRemote: reachable, ${refCount} branch refs (unauthenticated)`);
+      return { reachable: true, refCount, attempts, isHttps };
+    } catch (firstErr) {
+      const errMsg = firstErr instanceof GitError ? firstErr.message : String(firstErr);
+      const retry = shouldRetryWithPat(auth, url);
+      if (!retry) {
+        debug("gitClient", `lsRemote: unauthenticated failed: ${errMsg}, no PAT fallback (${noPatFallbackReason(auth, isHttps)})`);
+        throw firstErr;
+      }
+      debug("gitClient", `lsRemote: unauthenticated failed: ${errMsg}, retrying with PAT`);
+      attempts.push("pat");
+      const { stdout } = await gitRedacted(
+        ["ls-remote", "--heads", retry.authUrl], retry.pat, undefined, { noPrompt: true },
+      );
+      const refCount = countRefs(stdout);
+      debug("gitClient", `lsRemote: reachable, ${refCount} branch refs (authenticated via PAT after retry)`);
+      return { reachable: true, refCount, attempts, isHttps };
+    }
+  } catch (err) {
+    const errMsg = err instanceof GitError ? err.message : String(err);
+    debug("gitClient", `lsRemote: unreachable — ${errMsg}`);
+    return { reachable: false, error: errMsg, attempts, isHttps };
+  }
 }

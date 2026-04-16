@@ -87,7 +87,7 @@ Build and register the server pointing at a test .NET solution:
 npm install
 npm run build
 
-# In your .NET solution, create .mcp/mcp-config.json:
+# In your .NET solution, create .mcp.json:
 ```
 
 ```json

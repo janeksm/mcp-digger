@@ -7,6 +7,7 @@ import { debug, initLogger } from "./logger.js";
 import { registerDigFile } from "./tools/digFile.js";
 import { registerDigOverview } from "./tools/digOverview.js";
 import { registerDigSignatures } from "./tools/digSignatures.js";
+import { registerDigStatus } from "./tools/digStatus.js";
 
 const server = new McpServer({
   name: "mcp-digger",
@@ -22,6 +23,7 @@ try {
   registerDigOverview(server, config);
   registerDigSignatures(server, config);
   registerDigFile(server, config);
+  registerDigStatus(server, config);
 
   if (config.warnings.length > 0) {
     for (const w of config.warnings) {
