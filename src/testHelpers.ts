@@ -119,3 +119,146 @@ export async function createBareRepo(
   await execFile("git", ["clone", "--bare", workDir, bareDir]);
   return bareDir;
 }
+
+// ── Solution-scanner test fixtures ──
+
+/**
+ * Write a minimal valid classic `.sln` referencing the given .csproj paths.
+ * Paths are written with Windows-style backslashes to mirror how `.sln` files
+ * are typically authored on Windows.
+ */
+export function writeSlnFile(
+  dir: string,
+  name: string,
+  csprojRelPaths: string[],
+): string {
+  fs.mkdirSync(dir, { recursive: true });
+  const lines: string[] = [
+    "Microsoft Visual Studio Solution File, Format Version 12.00",
+  ];
+  for (const rel of csprojRelPaths) {
+    const winPath = rel.replace(/\//g, "\\");
+    const projName = path.basename(rel, ".csproj");
+    const guid = "{" + Math.random().toString(36).slice(2, 10).toUpperCase() + "-0000-0000-0000-000000000000}";
+    lines.push(
+      `Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "${projName}", "${winPath}", "${guid}"`,
+    );
+    lines.push("EndProject");
+  }
+  const slnPath = path.join(dir, name);
+  fs.writeFileSync(slnPath, lines.join("\r\n") + "\r\n");
+  return slnPath;
+}
+
+/** Write a minimal `.slnx` (XML solution) referencing the given .csproj paths. */
+export function writeSlnxFile(
+  dir: string,
+  name: string,
+  csprojRelPaths: string[],
+): string {
+  fs.mkdirSync(dir, { recursive: true });
+  const body = csprojRelPaths
+    .map((rel) => `  <Project Path="${rel.replace(/\//g, "\\")}" />`)
+    .join("\n");
+  const slnxPath = path.join(dir, name);
+  fs.writeFileSync(slnxPath, `<Solution>\n${body}\n</Solution>\n`);
+  return slnxPath;
+}
+
+/** Write a minimal `.csproj` with `<PackageReference>` entries. */
+export function writeCsprojFile(
+  absPath: string,
+  packageRefs: string[],
+): void {
+  fs.mkdirSync(path.dirname(absPath), { recursive: true });
+  const refs = packageRefs
+    .map((name) => `    <PackageReference Include="${name}" Version="1.0.0" />`)
+    .join("\n");
+  fs.writeFileSync(
+    absPath,
+    `<Project Sdk="Microsoft.NET.Sdk">\n  <ItemGroup>\n${refs}\n  </ItemGroup>\n</Project>\n`,
+  );
+}
+
+/** Write a minimal `Directory.Packages.props` with `<PackageVersion>` (CPM) entries. */
+export function writeDirectoryPackagesProps(
+  dir: string,
+  packageVersions: string[],
+  packageRefs: string[] = [],
+): string {
+  fs.mkdirSync(dir, { recursive: true });
+  const versions = packageVersions
+    .map((name) => `    <PackageVersion Include="${name}" Version="1.0.0" />`)
+    .join("\n");
+  const refs = packageRefs
+    .map((name) => `    <PackageReference Include="${name}" />`)
+    .join("\n");
+  const parts = [versions, refs].filter((s) => s.length > 0).join("\n");
+  const target = path.join(dir, "Directory.Packages.props");
+  fs.writeFileSync(
+    target,
+    `<Project>\n  <ItemGroup>\n${parts}\n  </ItemGroup>\n</Project>\n`,
+  );
+  return target;
+}
+
+/** Write a minimal `Directory.Build.props` with `<PackageReference>` entries. */
+export function writeDirectoryBuildProps(
+  dir: string,
+  packageRefs: string[],
+): string {
+  fs.mkdirSync(dir, { recursive: true });
+  const refs = packageRefs
+    .map((name) => `    <PackageReference Include="${name}" Version="1.0.0" />`)
+    .join("\n");
+  const target = path.join(dir, "Directory.Build.props");
+  fs.writeFileSync(
+    target,
+    `<Project>\n  <ItemGroup>\n${refs}\n  </ItemGroup>\n</Project>\n`,
+  );
+  return target;
+}
+
+/** Write a minimal `Directory.Build.targets` with `<PackageReference>` entries. */
+export function writeDirectoryBuildTargets(
+  dir: string,
+  packageRefs: string[],
+): string {
+  fs.mkdirSync(dir, { recursive: true });
+  const refs = packageRefs
+    .map((name) => `    <PackageReference Include="${name}" Version="1.0.0" />`)
+    .join("\n");
+  const target = path.join(dir, "Directory.Build.targets");
+  fs.writeFileSync(
+    target,
+    `<Project>\n  <ItemGroup>\n${refs}\n  </ItemGroup>\n</Project>\n`,
+  );
+  return target;
+}
+
+/**
+ * Build a wildcard RepoConfig for tests. The returned config has
+ * `discoveryMode: "wildcard"`, `namePrefix` derived from the name, and
+ * an empty `packages` list (to be populated by `ensureReady`).
+ */
+export function makeWildcardRepo(
+  name: string,
+  tmpDir: string,
+  overrides: Partial<RepoConfig> = {},
+): RepoConfig {
+  if (!name.endsWith("*")) {
+    throw new Error("makeWildcardRepo: name must end with '*'");
+  }
+  const namePrefix = name.slice(0, -1);
+  const slug = namePrefix.replace(/\.+$/, "") || name;
+  return {
+    name,
+    namePrefix,
+    managedSourcePath: path.join(tmpDir, "source", slug),
+    sourceRoot: "src",
+    discoveryMode: "wildcard",
+    packages: [],
+    auth: { strategy: "none" },
+    ...overrides,
+  };
+}

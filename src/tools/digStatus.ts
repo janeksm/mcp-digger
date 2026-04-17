@@ -1,8 +1,16 @@
+import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { DiggerConfig, GitAuth } from "../config.js";
+import type { DiggerConfig, GitAuth, RepoConfig } from "../config.js";
 import * as gitClient from "../gitClient.js";
 import type { LsRemoteResult } from "../gitClient.js";
 import { debug } from "../logger.js";
+import {
+  readScanCache,
+  scanCachePath,
+  scanWorkspace,
+  writeScanCache,
+  type ScanResult,
+} from "../solutionScanner.js";
 
 // ── Tool description (shown to Claude Code) ──
 
@@ -55,6 +63,57 @@ export async function digStatus(config: DiggerConfig): Promise<string> {
     }
   }
 
+  // ── Workspace scan ──
+  // Prefer the cache (cheap). If no cache exists yet but we have wildcard
+  // repos, run the scan now so the health report is useful on first call.
+  const hasWildcard = config.repos.some((r) => r.discoveryMode === "wildcard");
+  let scan: ScanResult | null = await readScanCache(config.cacheDir);
+  if (!scan && hasWildcard) {
+    try {
+      scan = await scanWorkspace(config.workspaceRoot);
+      await writeScanCache(config.cacheDir, scan);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      debug("digStatus", "scan failed:", msg);
+    }
+  }
+  if (scan) {
+    sections.push("");
+    sections.push("## Workspace scan");
+    sections.push(`- **Last scanned:** ${scan.scannedAt}`);
+    const slnCount = scan.solutionFiles.filter((f) =>
+      f.toLowerCase().endsWith(".sln"),
+    ).length;
+    const slnxCount = scan.solutionFiles.length - slnCount;
+    sections.push(
+      `- **Solution files:** ${scan.solutionFiles.length} (.sln: ${slnCount}, .slnx: ${slnxCount})`,
+    );
+    sections.push(
+      `- **Directory.Packages.props:** ${scan.directoryPackagesProps.length}${formatRelPaths(scan.directoryPackagesProps, scan.workspaceRoot)}`,
+    );
+    sections.push(
+      `- **Directory.Build.props:** ${scan.directoryBuildProps.length}${formatRelPaths(scan.directoryBuildProps, scan.workspaceRoot)}`,
+    );
+    sections.push(
+      `- **Directory.Build.targets:** ${scan.directoryBuildTargets.length}${formatRelPaths(scan.directoryBuildTargets, scan.workspaceRoot)}`,
+    );
+    sections.push(`- **csproj files resolved:** ${scan.csprojFiles.length}`);
+    sections.push(`- **Total referenced packages:** ${scan.packages.length}`);
+    sections.push(`- **Cache file:** ${scanCachePath(config.cacheDir)}`);
+    if (scan.warnings.length > 0) {
+      sections.push(`- **Scan warnings:**`);
+      for (const w of scan.warnings) {
+        sections.push(`  - ${w}`);
+      }
+    }
+  } else if (hasWildcard) {
+    sections.push("");
+    sections.push("## Workspace scan");
+    sections.push(
+      `- Scan failed or cache unavailable — wildcard repos cannot resolve packages.`,
+    );
+  }
+
   if (config.repos.length === 0) {
     sections.push("");
     sections.push("No repositories configured.");
@@ -83,14 +142,7 @@ export async function digStatus(config: DiggerConfig): Promise<string> {
     sections.push(`- **PAT:** ${repo.auth.pat ? "configured" : "not set"}`);
 
     // Package info
-    const pkgInfo = repo.discoveryMode === "auto"
-      ? `auto (${repo.packages.length > 0 ? repo.packages.length + " discovered" : "not yet discovered"})`
-      : `explicit (${repo.packages.length})`;
-    sections.push(`- **Discovery:** ${pkgInfo}`);
-    if (repo.packages.length > 0) {
-      const names = repo.packages.map((p) => p.name).join(", ");
-      sections.push(`- **Packages:** ${names}`);
-    }
+    sections.push(...formatDiscovery(repo, scan));
 
     // Local path check
     if (repo.localPath) {
@@ -136,6 +188,49 @@ export async function digStatus(config: DiggerConfig): Promise<string> {
 }
 
 // ── Internal ──
+
+function formatDiscovery(repo: RepoConfig, scan: ScanResult | null): string[] {
+  const lines: string[] = [];
+  if (repo.discoveryMode === "wildcard") {
+    const prefix = repo.namePrefix!;
+    lines.push(`- **Discovery:** wildcard (prefix "${prefix}")`);
+    if (scan) {
+      const matchingRefs = scan.packages.filter((p) => p.startsWith(prefix));
+      lines.push(
+        `- **Referenced matching prefix:** ${matchingRefs.length}${matchingRefs.length > 0 ? ` (${matchingRefs.join(", ")})` : ""}`,
+      );
+    } else {
+      lines.push(`- **Referenced matching prefix:** unavailable — run dig_overview to trigger a scan`);
+    }
+    if (repo.packages.length > 0) {
+      const names = repo.packages.map((p) => p.name).join(", ");
+      lines.push(`- **Matched packages:** ${repo.packages.length} (${names})`);
+    } else {
+      lines.push(
+        `- **Matched packages:** not yet resolved — run dig_overview to clone the repo and compute the intersection`,
+      );
+    }
+  } else {
+    const pkgInfo =
+      repo.discoveryMode === "auto"
+        ? `auto (${repo.packages.length > 0 ? repo.packages.length + " discovered" : "not yet discovered"})`
+        : `explicit (${repo.packages.length})`;
+    lines.push(`- **Discovery:** ${pkgInfo}`);
+    if (repo.packages.length > 0) {
+      const names = repo.packages.map((p) => p.name).join(", ");
+      lines.push(`- **Packages:** ${names}`);
+    }
+  }
+  return lines;
+}
+
+function formatRelPaths(absPaths: string[], workspaceRoot: string): string {
+  if (absPaths.length === 0) return "";
+  const rel = absPaths
+    .map((p) => path.relative(workspaceRoot, p).replace(/\\/g, "/"))
+    .join(", ");
+  return ` (${rel})`;
+}
 
 function formatConnectivityResult(
   result: LsRemoteResult,

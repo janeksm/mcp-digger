@@ -8,7 +8,7 @@ import {
 } from "../cacheManager.js";
 import type { DiggerConfig, PackageConfig } from "../config.js";
 import { debug } from "../logger.js";
-import { ensureReady } from "../repoManager.js";
+import { ensureAllReady } from "../repoManager.js";
 import { extractOverview } from "../sourceExtractor.js";
 
 // ── Tool description (shown to Claude Code) ──
@@ -54,12 +54,22 @@ export async function digOverview(config: DiggerConfig): Promise<string> {
   const sections: string[] = [];
   const warnings: string[] = [];
 
-  // Process repos sequentially to avoid concurrent git operations
-  for (const repo of config.repos) {
-    try {
-      const result = await ensureReady(repo, config);
-      if (result.warning) warnings.push(result.warning);
+  const results = await ensureAllReady(config);
 
+  for (const repo of config.repos) {
+    const result = results.get(repo.name)!;
+    if (result.warning) warnings.push(result.warning);
+
+    if (result.error) {
+      warnings.push(`Repo '${repo.name}': ${result.error}`);
+      sections.push(
+        `## ${repo.name}\n\n*${result.error.split("\n")[0]}*\n\n${result.error}`,
+      );
+      await appendStaleFallback(sections, repo.packages, result.error);
+      continue;
+    }
+
+    try {
       const fresh = await isFresh(
         config.cacheDir,
         repo.name,
@@ -96,7 +106,6 @@ export async function digOverview(config: DiggerConfig): Promise<string> {
         await markFresh(config.cacheDir, repo.name, result.currentHash);
       }
     } catch (err) {
-      // Repo unavailable — try stale cache as fallback
       const msg = err instanceof Error ? err.message : String(err);
       warnings.push(`Repo '${repo.name}': ${msg}`);
       await appendStaleFallback(sections, repo.packages, msg);

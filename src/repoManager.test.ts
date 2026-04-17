@@ -6,11 +6,17 @@ import * as util from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RepoConfig } from "./config.js";
 import { ensureAllReady, ensureReady } from "./repoManager.js";
+import { scanCachePath } from "./solutionScanner.js";
 import {
   createBareRepo as createBareRepoHelper,
   initRepo as initRepoHelper,
   makeConfig as makeConfigHelper,
   makeRepoConfig as makeRepoConfigHelper,
+  makeWildcardRepo as makeWildcardRepoHelper,
+  writeCsprojFile,
+  writeDirectoryPackagesProps,
+  writeSlnFile,
+  writeSlnxFile,
 } from "./testHelpers.js";
 
 const execFile = util.promisify(child_process.execFile);
@@ -32,6 +38,8 @@ const createBareRepo = (files: Record<string, string>) => createBareRepoHelper(t
 const makeConfig = (repos: RepoConfig[]) => makeConfigHelper(repos, tmpDir);
 const makeRepoConfig = (overrides: Partial<RepoConfig> & { name: string }) =>
   makeRepoConfigHelper(overrides, tmpDir);
+const makeWildcardRepo = (name: string, overrides: Partial<RepoConfig> = {}) =>
+  makeWildcardRepoHelper(name, tmpDir, overrides);
 
 // ── Mode B (local path) ──
 
@@ -239,5 +247,144 @@ describe("ensureAllReady", () => {
 
     expect(results.get("local-lib")!.mode).toBe("local");
     expect(results.get("remote-lib")!.mode).toBe("managed");
+  });
+
+  it("captures per-repo errors on the result instead of throwing", async () => {
+    const goodLocal = await initRepo({ "file.txt": "good" });
+    const good = makeRepoConfig({ name: "good", localPath: goodLocal });
+    const bad = makeRepoConfig({
+      name: "bad",
+      localPath: path.join(tmpDir, "nowhere"),
+    });
+    const config = makeConfig([good, bad]);
+
+    const results = await ensureAllReady(config);
+
+    expect(results.get("good")!.error).toBeUndefined();
+    expect(results.get("bad")!.error).toMatch(/not a valid git repo/);
+  });
+});
+
+// ── Wildcard mode ──
+
+describe("ensureReady — wildcard mode", () => {
+  it("intersects on-disk candidates, prefix, and workspace-referenced packages", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": "<Project />",
+      "src/MyCompany.Auth/MyCompany.Auth.csproj": "<Project />",
+      "src/MyCompany.Internal/MyCompany.Internal.csproj": "<Project />",
+    });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), [
+      "MyCompany.Core",
+      "MyCompany.Auth",
+      "Newtonsoft.Json",
+    ]);
+    writeSlnFile(tmpDir, "Sample.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.*", { localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    const results = await ensureAllReady(config);
+    const result = results.get("MyCompany.*")!;
+
+    expect(result.error).toBeUndefined();
+    const names = repo.packages.map((p) => p.name).sort();
+    expect(names).toEqual(["MyCompany.Auth", "MyCompany.Core"]);
+  });
+
+  it("resolves references from .slnx solution files", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": "<Project />",
+    });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["MyCompany.Core"]);
+    writeSlnxFile(tmpDir, "Modern.slnx", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.*", { localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    expect(repo.packages.map((p) => p.name)).toEqual(["MyCompany.Core"]);
+  });
+
+  it("resolves references from Directory.Packages.props when no solution exists", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": "<Project />",
+    });
+    writeDirectoryPackagesProps(tmpDir, ["MyCompany.Core"]);
+
+    const repo = makeWildcardRepo("MyCompany.*", { localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    expect(repo.packages.map((p) => p.name)).toEqual(["MyCompany.Core"]);
+  });
+
+  it("sets error when wildcard matches zero packages", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": "<Project />",
+    });
+    // Solution references something outside the repo's prefix
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["Newtonsoft.Json"]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.*", { localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    const results = await ensureAllReady(config);
+    const result = results.get("MyCompany.*")!;
+
+    expect(result.error).toBeDefined();
+    expect(result.error).toMatch(/matched zero packages/);
+    expect(result.error).toMatch(/explicit 'packages' list/);
+    expect(repo.packages).toEqual([]);
+  });
+
+  it("leaves non-wildcard sibling repos unaffected when a wildcard has zero matches", async () => {
+    const wildcardRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": "<Project />",
+    });
+    const explicitRepo = await initRepo({
+      "src/Other/Other.csproj": "<Project />",
+    });
+
+    // No solutions → wildcard matches nothing
+    const wildcard = makeWildcardRepo("MyCompany.*", { localPath: wildcardRepo });
+    const explicit = makeRepoConfig({
+      name: "explicit",
+      localPath: explicitRepo,
+      packages: [
+        {
+          name: "Other",
+          repoName: "explicit",
+          pathInRepo: "src/Other",
+          cachePath: path.join(tmpDir, "cache", "Other"),
+        },
+      ],
+    });
+    const config = makeConfig([wildcard, explicit]);
+
+    const results = await ensureAllReady(config);
+
+    expect(results.get("MyCompany.*")!.error).toBeDefined();
+    expect(results.get("explicit")!.error).toBeUndefined();
+    expect(explicit.packages).toHaveLength(1);
+  });
+
+  it("writes solution-scan.json to cacheDir whenever a wildcard repo runs", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": "<Project />",
+    });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["MyCompany.Core"]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.*", { localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    const cachePath = scanCachePath(config.cacheDir);
+    expect(fs.existsSync(cachePath)).toBe(true);
   });
 });

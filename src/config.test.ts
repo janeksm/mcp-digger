@@ -122,6 +122,23 @@ describe("loadConfig — happy path", () => {
     expect(cfg.repos[0]!.packages).toEqual([]);
   });
 
+  it("treats packages:[] the same as omitted → auto-discover", () => {
+    const config: ConfigFile = {
+      repos: [
+        {
+          name: "bsf",
+          url: "https://gitlab.company.com/shared/bsf.git",
+          packages: [],
+        },
+      ],
+    };
+    const { env, cwd } = setupConfig(config);
+    const cfg = loadConfig(env, cwd);
+
+    expect(cfg.repos[0]!.discoveryMode).toBe("auto");
+    expect(cfg.repos[0]!.packages).toEqual([]);
+  });
+
   it("defaults sourceRoot to 'src' when omitted", () => {
     const { env, cwd } = setupConfig(minimalConfig({ sourceRoot: undefined }));
     const cfg = loadConfig(env, cwd);
@@ -762,5 +779,76 @@ describe("findRepo", () => {
     const { env, cwd } = setupConfig(minimalConfig());
     const cfg = loadConfig(env, cwd);
     expect(findRepo(cfg, "NonExistent")).toBeUndefined();
+  });
+});
+
+// ── Wildcard repo names ──
+
+describe("loadConfig — wildcard repo names", () => {
+  it("name 'MyCompany.*' → discoveryMode 'wildcard', namePrefix 'MyCompany.', slug-based managedSourcePath", () => {
+    const config: ConfigFile = {
+      repos: [
+        {
+          name: "MyCompany.*",
+          url: "https://gitlab.company.com/shared/libs.git",
+        },
+      ],
+    };
+    const { env, cwd } = setupConfig(config);
+    const cfg = loadConfig(env, cwd);
+
+    expect(cfg.repos[0]!.discoveryMode).toBe("wildcard");
+    expect(cfg.repos[0]!.namePrefix).toBe("MyCompany.");
+    expect(cfg.repos[0]!.packages).toEqual([]);
+    expect(cfg.repos[0]!.managedSourcePath).toBe(
+      path.join(cwd, ".digger/source", "MyCompany"),
+    );
+  });
+
+  it("name 'MyCompany*' (no dot) → prefix 'MyCompany', slug 'MyCompany'", () => {
+    const config: ConfigFile = {
+      repos: [{ name: "MyCompany*", url: "https://g.com/x.git" }],
+    };
+    const { env, cwd } = setupConfig(config);
+    const cfg = loadConfig(env, cwd);
+
+    expect(cfg.repos[0]!.namePrefix).toBe("MyCompany");
+    expect(cfg.repos[0]!.managedSourcePath).toBe(
+      path.join(cwd, ".digger/source", "MyCompany"),
+    );
+  });
+
+  it("rejects wildcard in non-trailing position", () => {
+    const config: ConfigFile = {
+      repos: [{ name: "MyCom*any", url: "https://g.com/x.git" }],
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(
+      /wildcard.*trailing/i,
+    );
+  });
+
+  it("rejects name '*' (empty slug after strip)", () => {
+    const config: ConfigFile = {
+      repos: [{ name: "*", url: "https://g.com/x.git" }],
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(/empty directory slug/i);
+  });
+
+  it("rejects wildcard repo with explicit 'packages' list", () => {
+    const config: ConfigFile = {
+      repos: [
+        {
+          name: "MyCompany.*",
+          url: "https://g.com/x.git",
+          packages: ["MyCompany.Core"],
+        },
+      ],
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(
+      /wildcard repos cannot have an explicit 'packages' list/i,
+    );
   });
 });

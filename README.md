@@ -140,13 +140,44 @@ Per repo:
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `name` | Yes | — | Repo label, used as clone dir name |
+| `name` | Yes | — | Repo label, used as clone dir name. A trailing `*` enables [wildcard mode](#wildcard-repo-names) |
 | `url` | No | — | Git clone URL (required unless the repo has a `localRepos` entry) |
 | `sourceRoot` | No | `"src"` | Relative path where package dirs live |
-| `packages` | No | auto-discover | Explicit list of package names |
+| `packages` | No | auto-discover | Explicit list of package names. Omit or leave empty to auto-discover every non-test `.csproj` in the repo. Mutually exclusive with wildcard `name` |
 | `auth` | No | `{ strategy: "auto" }` | Git auth — see [Auth](#auth) below |
 
-When `packages` is omitted, mcp-digger scans the repo for directories containing a matching `.csproj` file (excluding test projects).
+When `packages` is omitted (or set to `[]`), mcp-digger scans the repo for directories containing a matching `.csproj` file (excluding `.Tests`, `.Specs`, `.Benchmarks`, `.IntegrationTests`).
+
+### Wildcard repo names
+
+Large internal mono-repos often contain dozens of packages, most of which a given consuming solution doesn't reference. Listing them explicitly is tedious; auto-discovering everything inflates context. A trailing `*` in the repo `name` activates **wildcard mode**, which narrows the package list to what's actually referenced by your .NET solution.
+
+```json
+{
+  "repos": [
+    {
+      "name": "MyCompany.*",
+      "url": "https://gitlab.company.com/shared/libs.git",
+      "auth": { "strategy": "pat", "PAT-EnvVarName": "COMPANY_GITLAB_PAT" }
+    }
+  ]
+}
+```
+
+**How it works** — the exposed package list is the intersection of three sets:
+
+1. **Referenced** — package names collected by recursively scanning the workspace for `*.sln`, `*.slnx`, `<PackageReference>` inside `.csproj` files, and `<PackageVersion>` / `<PackageReference>` inside `Directory.Packages.props`, `Directory.Build.props`, and `Directory.Build.targets`. Dirs `.git`, `.digger`, `node_modules`, `bin`, `obj`, `.vs`, `.idea`, and `packages` are skipped.
+2. **Matching the prefix** — only names that start with the repo-name prefix (everything before `*`). For `"MyCompany.*"` the prefix is `MyCompany.`.
+3. **Present in the repo** — only packages that actually exist as non-test `.csproj` directories in the shared-libs repo.
+
+**Rules**:
+- `*` is allowed only as a trailing character. `"MyCom*any"` is rejected.
+- Wildcard repos cannot have an explicit `packages` list — the two are mutually exclusive.
+- The clone directory name strips the trailing `*` and any trailing dots: `"MyCompany.*"` → `.digger/source/MyCompany`.
+
+**Cache file** — every scan writes its full result to `.digger/cache/solution-scan.json`. Inspect it when diagnosing matches; it lists the solution/props/targets files found, the resolved `.csproj` set, and the deduped package list.
+
+**If nothing matches** — if the intersection is empty (e.g. the solution doesn't reference any `MyCompany.*` package, or the prefix is wrong) the tools surface an actionable error asking you to either fix the config or switch to an explicit `packages` list. Call `dig_status` to see the scan summary.
 
 ### Two Repo Modes
 

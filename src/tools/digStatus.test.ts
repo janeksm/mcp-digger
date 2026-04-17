@@ -10,6 +10,9 @@ import {
   makeLocalRepo,
   makePkg,
   makeRepoConfig,
+  makeWildcardRepo,
+  writeCsprojFile,
+  writeSlnFile,
 } from "../testHelpers.js";
 import { digStatus } from "./digStatus.js";
 
@@ -181,6 +184,49 @@ describe("mixed results", () => {
     expect(result).toContain("Repo: good");
     expect(result).toContain("Repo: bad");
     expect(result).toContain("1 of 2 repo(s) have issues");
+  });
+});
+
+// ── Wildcard repos ──
+
+describe("wildcard repo rendering", () => {
+  it("renders Workspace scan section and per-repo cross-check counts", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyCompany.Core/A.cs": "namespace Core;",
+    });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), [
+      "MyCompany.Core",
+      "Newtonsoft.Json",
+    ]);
+    writeSlnFile(tmpDir, "Sample.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("## Workspace scan");
+    expect(result).toContain("Solution files:** 1");
+    expect(result).toContain("Total referenced packages:** 2");
+    expect(result).toContain('Discovery:** wildcard (prefix "MyCompany.")');
+    expect(result).toContain("Referenced matching prefix:** 1");
+    expect(result).toContain("MyCompany.Core");
+  });
+
+  it("indicates when wildcard repo has not yet been resolved", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyCompany.Core/A.cs": "namespace Core;",
+    });
+    // No solution files — scan produces an empty set, but it still runs.
+    const repo = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain('Discovery:** wildcard (prefix "MyCompany.")');
+    expect(result).toContain("Matched packages:** not yet resolved");
   });
 });
 

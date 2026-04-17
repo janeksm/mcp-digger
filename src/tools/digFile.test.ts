@@ -8,6 +8,7 @@ import {
   makeLocalRepo,
   makePkg,
   makeRepoConfig,
+  makeWildcardRepo,
 } from "../testHelpers.js";
 import { digFile } from "./digFile.js";
 
@@ -102,6 +103,19 @@ describe("unknown package", () => {
 
     expect(result).toContain("Unknown package 'Anything'");
     expect(result).toContain("No packages are configured");
+  });
+
+  it("hints to run dig_overview when a wildcard repo is unresolved", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, { "readme.md": "hi" });
+    const wildcard = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
+    const config = makeConfig([wildcard], tmpDir, cacheDir);
+
+    const result = await digFile(config, "MyCompany.Core", "Something.cs");
+
+    expect(result).toContain("Unknown package 'MyCompany.Core'");
+    expect(result).toMatch(/wildcard repo.*'MyCompany\.\*'.*have not resolved/i);
+    expect(result).toContain("dig_overview");
   });
 });
 

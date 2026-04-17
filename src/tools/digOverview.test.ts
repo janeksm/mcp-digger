@@ -15,6 +15,9 @@ import {
   makeLocalRepo,
   makePkg,
   makeRepoConfig,
+  makeWildcardRepo,
+  writeCsprojFile,
+  writeSlnFile,
 } from "../testHelpers.js";
 import { digOverview } from "./digOverview.js";
 
@@ -257,6 +260,29 @@ describe("error handling", () => {
     const result = await digOverview(config);
 
     expect(result).toBe("No packages configured.");
+  });
+});
+
+// ── Wildcard repo error surfacing ──
+
+describe("wildcard repo errors", () => {
+  it("surfaces the 'matched zero packages' error when a wildcard repo has no matches", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyCompany.Core/MyCompany.Core.csproj": "<Project />",
+    });
+    // Solution references something outside the wildcard prefix
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["Newtonsoft.Json"]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digOverview(config);
+
+    expect(result).toContain("matched zero packages");
+    expect(result).toContain("explicit 'packages' list");
+    expect(result).toContain("Warnings");
   });
 });
 

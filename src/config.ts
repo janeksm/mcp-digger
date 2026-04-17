@@ -38,13 +38,22 @@ export interface RepoConfig {
   url?: string;
   /** Absolute path to developer's local clone (Mode B), from `localRepos`. */
   localPath?: string;
-  /** Absolute target dir for managed clones: `<managedSourceDir>/<repoName>`. */
+  /** Absolute target dir for managed clones: `<managedSourceDir>/<slug>`. */
   managedSourcePath: string;
   /** Relative path within repo where package dirs live (default "src"). */
   sourceRoot: string;
-  /** "explicit" = packages listed in config file. "auto" = scan repo on disk. */
-  discoveryMode: "explicit" | "auto";
-  /** Populated immediately for explicit, lazily (by discoverPackages) for auto. */
+  /**
+   * - `"explicit"`: packages listed in config file.
+   * - `"auto"`: scan repo on disk for every non-test `.csproj` dir.
+   * - `"wildcard"`: trailing-`*` repo name; intersect (solution-referenced ∩ `namePrefix` ∩ on-disk candidates).
+   */
+  discoveryMode: "explicit" | "auto" | "wildcard";
+  /**
+   * Only populated for wildcard repos. The repo name with the trailing `*`
+   * stripped — matched against package names via `startsWith`.
+   */
+  namePrefix?: string;
+  /** Populated immediately for explicit, lazily (by discoverPackages / wildcard) for auto and wildcard. */
   packages: PackageConfig[];
   /** Resolved git auth for this repo. Never undefined — defaults to `{ strategy: "auto" }`. */
   auth: GitAuth;
@@ -377,6 +386,39 @@ export function loadConfig(
     }
     repoNames.add(name);
 
+    const hasExplicitPackages =
+      Array.isArray(repoDef.packages) && repoDef.packages.length > 0;
+
+    // Wildcard: only allowed as a trailing character
+    const isWildcard = name.endsWith("*");
+    if (name.includes("*") && !isWildcard) {
+      errors.push(
+        `Repo '${name}': wildcard '*' is only allowed as a trailing character in the repo name.`,
+      );
+      continue;
+    }
+
+    let namePrefix: string | undefined;
+    let slug: string;
+    if (isWildcard) {
+      namePrefix = name.slice(0, -1);
+      slug = namePrefix.replace(/\.+$/, "");
+      if (!slug) {
+        errors.push(
+          `Repo '${name}': name collapses to an empty directory slug after stripping wildcard — use a prefix like 'MyCompany.*'.`,
+        );
+        continue;
+      }
+      if (hasExplicitPackages) {
+        errors.push(
+          `Repo '${name}': wildcard repos cannot have an explicit 'packages' list — packages are derived from the workspace's .sln / .slnx / props / targets.`,
+        );
+        continue;
+      }
+    } else {
+      slug = name;
+    }
+
     const url = repoDef.url?.trim() || undefined;
     const localRaw = localRepos.get(name);
     const localPath = localRaw ? path.resolve(cwd, localRaw) : undefined;
@@ -389,13 +431,15 @@ export function loadConfig(
     localRepos.delete(name);
 
     const sourceRoot = repoDef.sourceRoot?.trim() || DEFAULT_SOURCE_ROOT;
-    const discoveryMode: "explicit" | "auto" = repoDef.packages
-      ? "explicit"
-      : "auto";
+    const discoveryMode: "explicit" | "auto" | "wildcard" = isWildcard
+      ? "wildcard"
+      : hasExplicitPackages
+        ? "explicit"
+        : "auto";
 
     // Build PackageConfig[] for explicit repos
     const packages: PackageConfig[] = [];
-    if (repoDef.packages) {
+    if (hasExplicitPackages && repoDef.packages) {
       for (const pkgName of repoDef.packages) {
         const trimmed = pkgName.trim();
         if (!trimmed) continue;
@@ -420,9 +464,10 @@ export function loadConfig(
       name,
       url,
       localPath,
-      managedSourcePath: path.join(managedSourceDir, name),
+      managedSourcePath: path.join(managedSourceDir, slug),
       sourceRoot,
       discoveryMode,
+      namePrefix,
       packages,
       auth,
     });
@@ -545,7 +590,29 @@ export function formatUnknownPackage(
   const available = config.repos
     .flatMap((r) => r.packages)
     .map((p) => p.name);
-  return available.length > 0
-    ? `Unknown package '${packageName}'. Available packages:\n${available.map((n) => `- ${n}`).join("\n")}`
-    : `Unknown package '${packageName}'. No packages are configured.`;
+
+  const unresolvedWildcards = config.repos.filter(
+    (r) => r.discoveryMode === "wildcard" && r.packages.length === 0,
+  );
+
+  const lines: string[] = [];
+  if (available.length > 0) {
+    lines.push(`Unknown package '${packageName}'. Available packages:`);
+    for (const n of available) lines.push(`- ${n}`);
+  } else {
+    lines.push(`Unknown package '${packageName}'. No packages are configured.`);
+  }
+
+  if (unresolvedWildcards.length > 0) {
+    const names = unresolvedWildcards.map((r) => `'${r.name}'`).join(", ");
+    lines.push("");
+    lines.push(
+      `Note: wildcard repo(s) ${names} have not resolved any packages. ` +
+        `Call dig_overview to trigger a workspace scan and repo clone — ` +
+        `this usually populates the package list. ` +
+        `If the scan still produces no match, add an explicit 'packages' list in ${config.configPath}.`,
+    );
+  }
+
+  return lines.join("\n");
 }

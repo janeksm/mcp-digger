@@ -20,6 +20,7 @@
 | 14 | `gitClient.ts` | done | 154e09d | Suppress GCM/credential prompts on auto strategy unauthenticated attempt |
 | 15 | `tools/digStatus.ts`, `gitClient.ts` | done | a2ceae8 | dig_status MCP tool, lsRemote() connectivity check, improved auth debug logging, DESIGN.md |
 | 16 | `config.ts`, `repoManager.ts`, `tools/digStatus.ts` | done | 5626ef3 | per-repo `auth` (strategy + PAT / PAT-EnvVarName), top-level `localRepos`, drop duplicated env vars, README rewrite with dig_status |
+| 17 | `solutionScanner.ts`, `config.ts`, `repoManager.ts`, `tools/*` | done | af6809a | wildcard repo names (`MyCompany.*`), recursive workspace scan (.sln/.slnx/Directory.Packages.props/Directory.Build.props/Directory.Build.targets), per-repo error surfacing, fix packages:[] auto-discover bug |
 | 10 | `index.ts` | — | | DRY version: read from package.json instead of hardcoding in McpServer constructor |
 
 **Statuses:** `—` not started, `in-progress` active, `done` committed, `blocked` waiting on something
