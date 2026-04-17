@@ -2,12 +2,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { RepoConfig } from "../config.js";
 import {
   initRepo,
   makeConfig,
   makeLocalRepo,
   makePkg,
+  makeRepoConfig,
 } from "../testHelpers.js";
 import { digFile } from "./digFile.js";
 
@@ -204,14 +204,14 @@ describe("error handling", () => {
   it("shows unavailable when repo is unreachable", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const pkg = makePkg("Missing", "norepo", "src", cacheDir);
-    const repo: RepoConfig = {
-      name: "norepo",
-      localPath: path.join(tmpDir, "nonexistent"),
-      managedSourcePath: path.join(tmpDir, "source", "norepo"),
-      sourceRoot: "src",
-      discoveryMode: "explicit",
-      packages: [pkg],
-    };
+    const repo = makeRepoConfig(
+      {
+        name: "norepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkg],
+      },
+      tmpDir,
+    );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digFile(config, "Missing", "Any.cs");

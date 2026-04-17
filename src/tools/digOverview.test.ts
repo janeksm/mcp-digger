@@ -8,13 +8,13 @@ import {
   readOverview,
   writeOverview,
 } from "../cacheManager.js";
-import type { RepoConfig } from "../config.js";
 import {
   getHeadHash,
   initRepo,
   makeConfig,
   makeLocalRepo,
   makePkg,
+  makeRepoConfig,
 } from "../testHelpers.js";
 import { digOverview } from "./digOverview.js";
 
@@ -173,14 +173,14 @@ describe("error handling", () => {
   it("shows unavailable message when repo has no source", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const pkg = makePkg("Missing", "norepo", "src", cacheDir);
-    const repo: RepoConfig = {
-      name: "norepo",
-      localPath: path.join(tmpDir, "nonexistent"),
-      managedSourcePath: path.join(tmpDir, "source", "norepo"),
-      sourceRoot: "src",
-      discoveryMode: "explicit",
-      packages: [pkg],
-    };
+    const repo = makeRepoConfig(
+      {
+        name: "norepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkg],
+      },
+      tmpDir,
+    );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digOverview(config);
@@ -197,14 +197,14 @@ describe("error handling", () => {
     // Pre-populate cache with stale data (no valid repo to refresh from)
     await writeOverview(pkg, "# StaleLib\n\nOld but useful content.\n");
 
-    const repo: RepoConfig = {
-      name: "gonerepo",
-      localPath: path.join(tmpDir, "nonexistent"),
-      managedSourcePath: path.join(tmpDir, "source", "gonerepo"),
-      sourceRoot: "src",
-      discoveryMode: "explicit",
-      packages: [pkg],
-    };
+    const repo = makeRepoConfig(
+      {
+        name: "gonerepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkg],
+      },
+      tmpDir,
+    );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digOverview(config);
@@ -229,14 +229,14 @@ describe("error handling", () => {
     const badPkg = makePkg("BadLib", "bad", "src", cacheDir);
 
     const goodRepo = makeLocalRepo("good", goodRepoDir, [goodPkg], tmpDir);
-    const badRepo: RepoConfig = {
-      name: "bad",
-      localPath: path.join(tmpDir, "nonexistent"),
-      managedSourcePath: path.join(tmpDir, "source", "bad"),
-      sourceRoot: "src",
-      discoveryMode: "explicit",
-      packages: [badPkg],
-    };
+    const badRepo = makeRepoConfig(
+      {
+        name: "bad",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [badPkg],
+      },
+      tmpDir,
+    );
     const config = makeConfig([goodRepo, badRepo], tmpDir, cacheDir);
 
     const result = await digOverview(config);

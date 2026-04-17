@@ -99,10 +99,10 @@ describe("loadConfig — happy path", () => {
     expect(cfg.warnings).toEqual([]);
   });
 
-  it("defaults auth to { strategy: 'auto', pat: undefined } when nothing set", () => {
+  it("defaults repo auth to { strategy: 'auto' } when auth block is omitted", () => {
     const { env, cwd } = setupConfig(minimalConfig());
     const cfg = loadConfig(env, cwd);
-    expect(cfg.auth).toEqual({ strategy: "auto", pat: undefined });
+    expect(cfg.repos[0]!.auth).toEqual({ strategy: "auto" });
   });
 
   it("marks repos without packages array as auto-discover", () => {
@@ -146,44 +146,54 @@ describe("loadConfig — happy path", () => {
     const cfg = loadConfig({}, tmpDir);
     expect(cfg.configPath).toBe(path.resolve(tmpDir, ".digger/config.json"));
   });
+
+  it("reads debug flag from config file", () => {
+    const { env, cwd } = setupConfig({ debug: true, ...minimalConfig() });
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.debug).toBe(true);
+  });
 });
 
-describe("loadConfig — env var merging", () => {
-  it("merges MCP_DIGGER_LOCAL_REPOS by repo name", () => {
-    const { env, cwd } = setupConfig(minimalConfig(), {
-      MCP_DIGGER_LOCAL_REPOS: "bsf:C:/dev/bsf-monorepo",
-    });
+describe("loadConfig — localRepos", () => {
+  it("maps repo name → absolute local path", () => {
+    const config: ConfigFile = {
+      localRepos: { bsf: "C:/dev/bsf-monorepo" },
+      ...minimalConfig(),
+    };
+    const { env, cwd } = setupConfig(config);
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.repos[0]!.localPath).toBe(path.resolve("C:/dev/bsf-monorepo"));
+  });
+
+  it("resolves relative localRepos paths against cwd", () => {
+    const config: ConfigFile = {
+      localRepos: { bsf: "../some/local/bsf" },
+      ...minimalConfig(),
+    };
+    const { env, cwd } = setupConfig(config);
     const cfg = loadConfig(env, cwd);
     expect(cfg.repos[0]!.localPath).toBe(
-      path.resolve("C:/dev/bsf-monorepo"),
+      path.resolve(cwd, "../some/local/bsf"),
     );
   });
 
-  it("captures MCP_DIGGER_PAT with default auto strategy", () => {
-    const { env, cwd } = setupConfig(minimalConfig(), {
-      MCP_DIGGER_PAT: "glpat-xxxx",
-    });
-    const cfg = loadConfig(env, cwd);
-    expect(cfg.auth.strategy).toBe("auto");
-    expect(cfg.auth.pat).toBe("glpat-xxxx");
-  });
-
-  it("allows repo with only LOCAL_REPOS and no url", () => {
+  it("allows repo with only localRepos entry and no url", () => {
     const config: ConfigFile = {
+      localRepos: { bsf: "C:/dev/bsf" },
       repos: [{ name: "bsf", packages: ["MyCompany.Core"] }],
     };
-    const { env, cwd } = setupConfig(config, {
-      MCP_DIGGER_LOCAL_REPOS: "bsf:C:/dev/bsf",
-    });
+    const { env, cwd } = setupConfig(config);
     const cfg = loadConfig(env, cwd);
     expect(cfg.repos[0]!.url).toBeUndefined();
     expect(cfg.repos[0]!.localPath).toBe(path.resolve("C:/dev/bsf"));
   });
 
   it("retains both url and localPath when both are set for the same repo", () => {
-    const { env, cwd } = setupConfig(minimalConfig(), {
-      MCP_DIGGER_LOCAL_REPOS: "bsf:C:/dev/bsf-monorepo",
-    });
+    const config: ConfigFile = {
+      localRepos: { bsf: "C:/dev/bsf-monorepo" },
+      ...minimalConfig(),
+    };
+    const { env, cwd } = setupConfig(config);
     const cfg = loadConfig(env, cwd);
     expect(cfg.repos[0]!.url).toBe(
       "https://gitlab.company.com/shared/bsf.git",
@@ -193,30 +203,35 @@ describe("loadConfig — env var merging", () => {
     );
   });
 
-  it("overrides DIGGER_CONFIG path via env var", () => {
-    const customDir = path.join(tmpDir, "custom");
-    fs.mkdirSync(customDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(customDir, "my-config.json"),
-      JSON.stringify(minimalConfig()),
-    );
-    const cfg = loadConfig(
-      { DIGGER_CONFIG: "custom/my-config.json" },
-      tmpDir,
-    );
-    expect(cfg.configPath).toBe(
-      path.resolve(tmpDir, "custom/my-config.json"),
-    );
+  it("warns on localRepos entries not matching any repo name", () => {
+    const config: ConfigFile = {
+      localRepos: { bsf: "C:/dev/bsf", "ghost-repo": "C:/dev/ghost" },
+      ...minimalConfig(),
+    };
+    const { env, cwd } = setupConfig(config);
+    const cfg = loadConfig(env, cwd);
+    expect(
+      cfg.warnings.some((w) => w.includes("ghost-repo")),
+    ).toBe(true);
   });
 
-  it("ignores legacy unprefixed env vars (LOCAL_REPOS, GIT_TOKEN)", () => {
-    const { env, cwd } = setupConfig(minimalConfig(), {
-      LOCAL_REPOS: "bsf:C:/dev/bsf",
-      GIT_TOKEN: "legacy-token",
-    });
-    const cfg = loadConfig(env, cwd);
-    expect(cfg.repos[0]!.localPath).toBeUndefined();
-    expect(cfg.auth.pat).toBeUndefined();
+  it("rejects non-object localRepos", () => {
+    // Pass a clearly-invalid value via type assertion
+    const config = {
+      localRepos: ["bsf:path"] as unknown,
+      ...minimalConfig(),
+    } as ConfigFile;
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(/localRepos.*object/i);
+  });
+
+  it("rejects localRepos entry with empty path", () => {
+    const config: ConfigFile = {
+      localRepos: { bsf: "   " },
+      ...minimalConfig(),
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(/non-empty string/);
   });
 });
 
@@ -345,7 +360,7 @@ describe("loadConfig — fatal errors", () => {
     );
   });
 
-  it("throws when a repo has neither url nor LOCAL_REPOS entry", () => {
+  it("throws when a repo has neither url nor localRepos entry", () => {
     const config: ConfigFile = {
       repos: [{ name: "bsf", packages: ["MyCompany.Core"] }],
     };
@@ -354,11 +369,14 @@ describe("loadConfig — fatal errors", () => {
     expect(() => loadConfig(env, cwd)).toThrow(/no 'url'/);
   });
 
-  it("throws on malformed MCP_DIGGER_LOCAL_REPOS entry with no colon", () => {
-    const { env, cwd } = setupConfig(minimalConfig(), {
-      MCP_DIGGER_LOCAL_REPOS: "bsf",
-    });
-    expect(() => loadConfig(env, cwd)).toThrow(/malformed/);
+  it("throws with migration guidance when legacy top-level authStrategy is present", () => {
+    // Forge the legacy shape via a cast so TS still type-checks the new schema.
+    const legacy = {
+      authStrategy: "pat",
+      ...minimalConfig(),
+    } as unknown as ConfigFile;
+    const { env, cwd } = setupConfig(legacy);
+    expect(() => loadConfig(env, cwd)).toThrow(/authStrategy.*no longer supported/i);
   });
 
   it("aggregates multiple errors into a single ConfigError", () => {
@@ -374,82 +392,114 @@ describe("loadConfig — fatal errors", () => {
   });
 });
 
-describe("loadConfig — warnings (non-fatal)", () => {
-  it("warns on MCP_DIGGER_LOCAL_REPOS entries not matching any repo name", () => {
-    const { env, cwd } = setupConfig(minimalConfig(), {
-      MCP_DIGGER_LOCAL_REPOS: "bsf:C:/dev/bsf,ghost-repo:C:/dev/ghost",
-    });
-    const cfg = loadConfig(env, cwd);
-    expect(
-      cfg.warnings.some((w) => w.includes("ghost-repo")),
-    ).toBe(true);
-  });
-});
-
-describe("loadConfig — authStrategy", () => {
-  /** Config with a given auth strategy. */
+describe("loadConfig — per-repo auth", () => {
+  /** Build a config with one repo and the given auth block. */
   function authConfig(
-    strategy: string,
+    auth: ConfigFile["repos"][number]["auth"],
     extra: NodeJS.ProcessEnv = {},
   ): { env: NodeJS.ProcessEnv; cwd: string } {
-    return setupConfig(
-      { authStrategy: strategy as ConfigFile["authStrategy"], ...minimalConfig() },
-      extra,
-    );
+    return setupConfig(minimalConfig({ auth }), extra);
   }
 
-  it("defaults to 'auto' when authStrategy is omitted from config", () => {
+  it("defaults to { strategy: 'auto' } when auth is omitted", () => {
     const { env, cwd } = setupConfig(minimalConfig());
     const cfg = loadConfig(env, cwd);
-    expect(cfg.auth.strategy).toBe("auto");
+    expect(cfg.repos[0]!.auth).toEqual({ strategy: "auto" });
   });
 
-  it("reads authStrategy from config file", () => {
-    const { env, cwd } = authConfig("none");
+  it("reads auth.strategy from config file", () => {
+    const { env, cwd } = authConfig({ strategy: "none" });
     const cfg = loadConfig(env, cwd);
-    expect(cfg.auth.strategy).toBe("none");
+    expect(cfg.repos[0]!.auth.strategy).toBe("none");
   });
 
-  it("strategy 'auto' with PAT set — PAT is available for fallback", () => {
-    const { env, cwd } = authConfig("auto", { MCP_DIGGER_PAT: "glpat-xxx" });
+  it("resolves inline auth.PAT", () => {
+    const { env, cwd } = authConfig({ strategy: "pat", PAT: "glpat-inline" });
     const cfg = loadConfig(env, cwd);
-    expect(cfg.auth).toEqual({ strategy: "auto", pat: "glpat-xxx" });
+    expect(cfg.repos[0]!.auth).toEqual({ strategy: "pat", pat: "glpat-inline" });
+  });
+
+  it("resolves auth.PAT-EnvVarName from environment", () => {
+    const { env, cwd } = authConfig(
+      { strategy: "pat", "PAT-EnvVarName": "MY_CUSTOM_PAT" },
+      { MY_CUSTOM_PAT: "glpat-from-env" },
+    );
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.repos[0]!.auth).toEqual({ strategy: "pat", pat: "glpat-from-env" });
+  });
+
+  it("rejects when both auth.PAT and auth.PAT-EnvVarName are set", () => {
+    const { env, cwd } = authConfig({
+      strategy: "pat",
+      PAT: "inline",
+      "PAT-EnvVarName": "SOME_VAR",
+    });
+    expect(() => loadConfig(env, cwd)).toThrow(/mutually exclusive/);
+  });
+
+  it("fails when strategy 'pat' has no PAT or PAT-EnvVarName", () => {
+    const { env, cwd } = authConfig({ strategy: "pat" });
+    expect(() => loadConfig(env, cwd)).toThrow(/no PAT or PAT-EnvVarName/);
+  });
+
+  it("fails when strategy 'pat' references an unset env var", () => {
+    const { env, cwd } = authConfig({
+      strategy: "pat",
+      "PAT-EnvVarName": "MISSING_ENV_VAR",
+    });
+    expect(() => loadConfig(env, cwd)).toThrow(/MISSING_ENV_VAR/);
   });
 
   it("strategy 'auto' without PAT — no error, pat is undefined", () => {
-    const { env, cwd } = authConfig("auto");
+    const { env, cwd } = authConfig({ strategy: "auto" });
     const cfg = loadConfig(env, cwd);
-    expect(cfg.auth).toEqual({ strategy: "auto", pat: undefined });
+    expect(cfg.repos[0]!.auth).toEqual({ strategy: "auto" });
   });
 
-  it("strategy 'pat' with PAT set — succeeds", () => {
-    const { env, cwd } = authConfig("pat", { MCP_DIGGER_PAT: "glpat-xxx" });
+  it("strategy 'auto' with PAT — PAT is retained for fallback", () => {
+    const { env, cwd } = authConfig({ strategy: "auto", PAT: "glpat-auto" });
     const cfg = loadConfig(env, cwd);
-    expect(cfg.auth).toEqual({ strategy: "pat", pat: "glpat-xxx" });
+    expect(cfg.repos[0]!.auth).toEqual({ strategy: "auto", pat: "glpat-auto" });
   });
 
-  it("strategy 'pat' without PAT — fatal error", () => {
-    const { env, cwd } = authConfig("pat");
-    expect(() => loadConfig(env, cwd)).toThrow(/MCP_DIGGER_PAT/);
-  });
-
-  it("strategy 'none' — pat is cleared even if MCP_DIGGER_PAT is set", () => {
-    const { env, cwd } = authConfig("none", { MCP_DIGGER_PAT: "glpat-xxx" });
+  it("strategy 'none' with PAT — PAT is cleared and a warning is emitted", () => {
+    const { env, cwd } = authConfig({ strategy: "none", PAT: "glpat-xxx" });
     const cfg = loadConfig(env, cwd);
-    expect(cfg.auth).toEqual({ strategy: "none", pat: undefined });
+    expect(cfg.repos[0]!.auth).toEqual({ strategy: "none" });
+    expect(cfg.warnings.some((w) => w.includes("will be ignored"))).toBe(true);
   });
 
-  it("strategy 'none' with PAT set — warns that PAT will be ignored", () => {
-    const { env, cwd } = authConfig("none", { MCP_DIGGER_PAT: "glpat-xxx" });
+  it("rejects invalid auth.strategy value", () => {
+    const { env, cwd } = authConfig({
+      strategy: "oauth" as unknown as "auto",
+    });
+    expect(() => loadConfig(env, cwd)).toThrow(/invalid auth\.strategy/i);
+  });
+
+  it("each repo can have its own auth — both are resolved independently", () => {
+    const config: ConfigFile = {
+      repos: [
+        {
+          name: "public",
+          url: "https://github.com/owner/public.git",
+          packages: ["Pub"],
+          auth: { strategy: "none" },
+        },
+        {
+          name: "private",
+          url: "https://gitlab.com/owner/private.git",
+          packages: ["Priv"],
+          auth: { strategy: "pat", "PAT-EnvVarName": "PRIV_PAT" },
+        },
+      ],
+    };
+    const { env, cwd } = setupConfig(config, { PRIV_PAT: "glpat-priv" });
     const cfg = loadConfig(env, cwd);
-    expect(cfg.warnings.some((w) => w.includes("PAT will be ignored"))).toBe(
-      true,
-    );
-  });
 
-  it("rejects invalid authStrategy value", () => {
-    const { env, cwd } = authConfig("oauth");
-    expect(() => loadConfig(env, cwd)).toThrow(/Invalid authStrategy/);
+    const pub = cfg.repos.find((r) => r.name === "public")!;
+    const priv = cfg.repos.find((r) => r.name === "private")!;
+    expect(pub.auth).toEqual({ strategy: "none" });
+    expect(priv.auth).toEqual({ strategy: "pat", pat: "glpat-priv" });
   });
 });
 
@@ -483,9 +533,9 @@ describe("parseEnvFile", () => {
     expect(result.get("FOO")).toBe("a=b=c");
   });
 
-  it("handles values containing colons (e.g. LOCAL_REPOS)", () => {
-    const result = parseEnvFile("MCP_DIGGER_LOCAL_REPOS=bsf:C:/dev/bsf,auth:C:/dev/auth");
-    expect(result.get("MCP_DIGGER_LOCAL_REPOS")).toBe("bsf:C:/dev/bsf,auth:C:/dev/auth");
+  it("handles values containing colons", () => {
+    const result = parseEnvFile("PATH_LIKE=a:b:c");
+    expect(result.get("PATH_LIKE")).toBe("a:b:c");
   });
 
   it("strips inline comments for unquoted values", () => {
@@ -516,41 +566,34 @@ describe("loadConfig — .env file loading", () => {
     fs.writeFileSync(path.join(tmpDir, ".env"), content);
   }
 
-  it("loads env vars from .env file", () => {
-    const { env, cwd } = setupConfig(minimalConfig());
-    writeEnvFile("MCP_DIGGER_PAT=glpat-from-env-file");
+  it("resolves PAT-EnvVarName via values in .env", () => {
+    const { env, cwd } = setupConfig(
+      minimalConfig({
+        auth: { strategy: "pat", "PAT-EnvVarName": "MY_PAT" },
+      }),
+    );
+    writeEnvFile("MY_PAT=glpat-from-env-file");
     const cfg = loadConfig(env, cwd);
-    expect(cfg.auth.pat).toBe("glpat-from-env-file");
+    expect(cfg.repos[0]!.auth.pat).toBe("glpat-from-env-file");
   });
 
-  it("actual env vars take precedence over .env file", () => {
-    const { env, cwd } = setupConfig(minimalConfig(), {
-      MCP_DIGGER_PAT: "glpat-from-actual-env",
-    });
-    writeEnvFile("MCP_DIGGER_PAT=glpat-from-env-file");
+  it("actual env vars take precedence over .env file values", () => {
+    const { env, cwd } = setupConfig(
+      minimalConfig({
+        auth: { strategy: "pat", "PAT-EnvVarName": "MY_PAT" },
+      }),
+      { MY_PAT: "glpat-from-actual-env" },
+    );
+    writeEnvFile("MY_PAT=glpat-from-env-file");
     const cfg = loadConfig(env, cwd);
-    expect(cfg.auth.pat).toBe("glpat-from-actual-env");
+    expect(cfg.repos[0]!.auth.pat).toBe("glpat-from-actual-env");
   });
 
   it("works when no .env file exists", () => {
     const { env, cwd } = setupConfig(minimalConfig());
     // no .env file written
     const cfg = loadConfig(env, cwd);
-    expect(cfg.auth.pat).toBeUndefined();
-  });
-
-  it(".env debug flag is picked up when not in actual env", () => {
-    const { env, cwd } = setupConfig(minimalConfig());
-    writeEnvFile("MCP_DIGGER_DEBUG=1");
-    const cfg = loadConfig(env, cwd);
-    expect(cfg.debug).toBe(true);
-  });
-
-  it(".env LOCAL_REPOS merges into config", () => {
-    const { env, cwd } = setupConfig(minimalConfig());
-    writeEnvFile("MCP_DIGGER_LOCAL_REPOS=bsf:C:/dev/bsf");
-    const cfg = loadConfig(env, cwd);
-    expect(cfg.repos[0]!.localPath).toBe(path.resolve("C:/dev/bsf"));
+    expect(cfg.repos[0]!.auth.pat).toBeUndefined();
   });
 });
 
@@ -578,6 +621,7 @@ describe("discoverPackages", () => {
       sourceRoot: "src",
       discoveryMode: "auto",
       packages: [],
+      auth: { strategy: "none" },
       ...overrides,
     };
   }

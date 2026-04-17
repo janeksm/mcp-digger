@@ -1,6 +1,6 @@
 # mcp-digger
 
-Node.js/TypeScript MCP server that gives Claude Code progressive access to internal .NET NuGet shared library source. Three dig levels: overview (markdown summary), signatures (stripped .cs — public API only), file (full source). Claude decides when to escalate based on tool descriptions.
+Node.js/TypeScript MCP server that gives Claude Code progressive access to internal .NET NuGet shared library source. One health-check tool (`dig_status`) plus three dig levels: overview (markdown summary), signatures (stripped .cs — public API only), file (full source). Claude decides when to escalate based on tool descriptions.
 
 ## Claude Rules
 
@@ -34,6 +34,7 @@ src/
   logger.ts             ← debug logging singleton (two-phase init with pre-init buffering)
   testHelpers.ts        ← shared test utilities
   tools/
+    digStatus.ts        ← Health check: config summary + lsRemote connectivity per repo
     digOverview.ts      ← Level 1: markdown overview of all packages
     digSignatures.ts    ← Level 2: stripped .cs public signatures for one package
     digFile.ts          ← Level 3: full source of a single file
@@ -41,23 +42,21 @@ src/
 
 ## Key Patterns
 
-- **Config is the single source of truth.** `loadConfig()` resolves all env vars, auth strategy, debug flag. Modules receive resolved config — they never read env vars directly.
-- **Git auth:** hybrid strategy (auto/pat/none). PAT is injected into HTTPS URLs at call time, never persisted to git remote config. `gitClient.ts` never logs credentials.
-- **Two repo modes:** Mode A = managed shallow clone in `.digger/source/`. Mode B = developer's local repo (read-only, never fetched). Fallback from B→A with warning if local path invalid.
+- **Config is the single source of truth.** `loadConfig()` resolves the config file, `.env` values, and per-repo auth. Modules receive resolved config — they never read env vars directly.
+- **Git auth is per-repo.** Each repo has its own `auth` block with strategy (auto/pat/none) and either inline `PAT` or `PAT-EnvVarName` (env var indirection for secrets). PAT is injected into HTTPS URLs at call time, never persisted to git remote config. `gitClient.ts` never logs credentials.
+- **Two repo modes:** Mode A = managed shallow clone in `.digger/source/`. Mode B = developer's local repo (read-only, never fetched), configured via top-level `localRepos` object. Fallback from B→A with warning if local path invalid.
 - **Cache invalidation:** single commit hash per repo in `meta.json`. All packages in a repo share freshness state. Stale → regenerate all, then `markFresh`.
 - **Tools never throw.** Always return a usable text response, even on errors (stale cache fallback, unavailable messages, valid path listings).
-- **Logger singleton:** `debug(tag, ...args)` — buffers before `initLogger()`, writes to `.digger/debug.log` after. Enabled via `MCP_DIGGER_DEBUG=1` env var or `"debug": true` in config.
+- **Logger singleton:** `debug(tag, ...args)` — buffers before `initLogger()`, writes to `.digger/debug.log` after. Enabled via `"debug": true` in config.
 
 ## Config & Env Vars
 
 Config file: `.digger/config.json` (path override: `DIGGER_CONFIG`).
 
-Env var precedence: actual environment > `.env` file in workspace root > config file defaults. The `.env` file is loaded automatically if present — values only fill in vars not already set in the real environment.
+Auth, local-repo paths, and the debug flag all live in the config file — no env vars duplicate them. The `.env` file is only used to supply per-machine secrets referenced by `auth.PAT-EnvVarName`. Precedence: actual environment > `.env` file in workspace root. Values in `.env` only fill in vars not already set in the real environment.
 
-Key env vars (per-machine, never committed):
-- `MCP_DIGGER_LOCAL_REPOS` — `repoName:path,repoName:path` (Mode B local repos)
-- `MCP_DIGGER_PAT` — git Personal Access Token
-- `MCP_DIGGER_DEBUG` — `1` to enable debug logging (overrides config file)
+Env vars (optional path overrides only — no secrets):
+- `DIGGER_CONFIG` — override config file path (default `.digger/config.json`)
 - `MANAGED_SOURCE_DIR` — override managed clone dir (default `.digger/source`)
 - `CACHE_DIR` — override cache dir (default `.digger/cache`)
 

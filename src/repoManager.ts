@@ -1,5 +1,5 @@
 import * as fs from "node:fs";
-import type { DiggerConfig, GitAuth, RepoConfig } from "./config.js";
+import type { DiggerConfig, RepoConfig } from "./config.js";
 import { discoverPackages } from "./config.js";
 import * as gitClient from "./gitClient.js";
 import { debug } from "./logger.js";
@@ -52,7 +52,7 @@ export async function ensureReady(
     } else if (repoConfig.url) {
       debug("repoManager", repoConfig.name, "local path invalid, falling back to managed");
       // Fallback: local path invalid but URL available → Mode A with warning
-      result = await ensureManaged(repoConfig, config.auth);
+      result = await ensureManaged(repoConfig);
       result.warning =
         `Local path '${repoConfig.localPath}' for repo '${repoConfig.name}' is not a valid git repo. ` +
         `Falling back to managed clone.`;
@@ -63,7 +63,7 @@ export async function ensureReady(
     }
   } else {
     // No local path → Mode A (managed)
-    result = await ensureManaged(repoConfig, config.auth);
+    result = await ensureManaged(repoConfig);
   }
 
   debug("repoManager", repoConfig.name, "ready hash=" + result.currentHash, "mode=" + result.mode);
@@ -100,7 +100,6 @@ export async function ensureAllReady(
 
 async function ensureManaged(
   repoConfig: RepoConfig,
-  auth: GitAuth,
 ): Promise<RepoReadyResult> {
   if (!repoConfig.url) {
     throw new Error(
@@ -115,10 +114,10 @@ async function ensureManaged(
     debug("repoManager", repoConfig.name, "cloning to", targetDir);
     // Remove any partial clone remnant (force: true is a no-op if path doesn't exist)
     await fs.promises.rm(targetDir, { recursive: true, force: true });
-    await gitClient.clone(repoConfig.url, targetDir, auth);
+    await gitClient.clone(repoConfig.url, targetDir, repoConfig.auth);
   } else {
     debug("repoManager", repoConfig.name, "fetching updates");
-    await gitClient.fetch(targetDir, auth, repoConfig.url);
+    await gitClient.fetch(targetDir, repoConfig.auth, repoConfig.url);
   }
 
   // For fresh clones HEAD is already the latest; for fetched repos use FETCH_HEAD

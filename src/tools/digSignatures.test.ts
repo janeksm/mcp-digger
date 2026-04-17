@@ -8,13 +8,13 @@ import {
   readSignatures,
   writeSignature,
 } from "../cacheManager.js";
-import type { RepoConfig } from "../config.js";
 import {
   getHeadHash,
   initRepo,
   makeConfig,
   makeLocalRepo,
   makePkg,
+  makeRepoConfig,
 } from "../testHelpers.js";
 import { digSignatures } from "./digSignatures.js";
 
@@ -152,14 +152,14 @@ describe("error handling", () => {
   it("shows unavailable when repo is unreachable", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const pkg = makePkg("Missing", "norepo", "src", cacheDir);
-    const repo: RepoConfig = {
-      name: "norepo",
-      localPath: path.join(tmpDir, "nonexistent"),
-      managedSourcePath: path.join(tmpDir, "source", "norepo"),
-      sourceRoot: "src",
-      discoveryMode: "explicit",
-      packages: [pkg],
-    };
+    const repo = makeRepoConfig(
+      {
+        name: "norepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkg],
+      },
+      tmpDir,
+    );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digSignatures(config, "Missing");
@@ -175,14 +175,14 @@ describe("error handling", () => {
     // Pre-populate cache with stale signatures
     await writeSignature(pkg, "Old.cs", "// old but useful");
 
-    const repo: RepoConfig = {
-      name: "gonerepo",
-      localPath: path.join(tmpDir, "nonexistent"),
-      managedSourcePath: path.join(tmpDir, "source", "gonerepo"),
-      sourceRoot: "src",
-      discoveryMode: "explicit",
-      packages: [pkg],
-    };
+    const repo = makeRepoConfig(
+      {
+        name: "gonerepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkg],
+      },
+      tmpDir,
+    );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digSignatures(config, "StaleLib");

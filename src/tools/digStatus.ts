@@ -46,8 +46,6 @@ export async function digStatus(config: DiggerConfig): Promise<string> {
   sections.push("# mcp-digger status");
   sections.push("## Configuration");
   sections.push(`- **Config file:** ${config.configPath}`);
-  sections.push(`- **Auth strategy:** ${config.auth.strategy}`);
-  sections.push(`- **PAT:** ${config.auth.pat ? "configured" : "not set"}`);
   sections.push(`- **Repos:** ${config.repos.length}`);
 
   if (config.warnings.length > 0) {
@@ -80,6 +78,10 @@ export async function digStatus(config: DiggerConfig): Promise<string> {
     }
     sections.push(`- **Source root:** ${repo.sourceRoot}`);
 
+    // Auth info (per-repo)
+    sections.push(`- **Auth strategy:** ${repo.auth.strategy}`);
+    sections.push(`- **PAT:** ${repo.auth.pat ? "configured" : "not set"}`);
+
     // Package info
     const pkgInfo = repo.discoveryMode === "auto"
       ? `auto (${repo.packages.length > 0 ? repo.packages.length + " discovered" : "not yet discovered"})`
@@ -109,8 +111,8 @@ export async function digStatus(config: DiggerConfig): Promise<string> {
 
     // Remote connectivity check
     if (repo.url) {
-      const result = await gitClient.lsRemote(repo.url, config.auth);
-      sections.push(...formatConnectivityResult(result, config.auth, repo.name));
+      const result = await gitClient.lsRemote(repo.url, repo.auth);
+      sections.push(...formatConnectivityResult(result, repo.auth, repo.name));
       if (!result.reachable) {
         repoIssues.push("remote unreachable");
       }
@@ -188,7 +190,7 @@ function inferHint(
     if (auth.pat) {
       return "authentication failed despite PAT — the PAT may be expired, revoked, or lack read permissions";
     }
-    return "authentication required — set MCP_DIGGER_PAT or check authStrategy in config";
+    return `authentication required — configure 'auth.PAT' or 'auth.PAT-EnvVarName' on repo '${repoName}'`;
   }
   if (err.includes("repository not found") || err.includes("404")) {
     return "repository not found — check the URL or ensure the PAT has access to this project";

@@ -2,13 +2,14 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { RepoConfig } from "../config.js";
+import type { GitAuth } from "../config.js";
 import {
   createBareRepo,
   initRepo,
   makeConfig,
   makeLocalRepo,
   makePkg,
+  makeRepoConfig,
 } from "../testHelpers.js";
 import { digStatus } from "./digStatus.js";
 
@@ -27,24 +28,12 @@ afterEach(() => {
 // ── Config summary ──
 
 describe("config summary", () => {
-  it("renders auth strategy and PAT status", async () => {
+  it("renders repo count in the configuration section", async () => {
     const config = makeConfig([], tmpDir);
 
     const result = await digStatus(config);
 
-    expect(result).toContain("Auth strategy:** none");
-    expect(result).toContain("PAT:** not set");
     expect(result).toContain("Repos:** 0");
-  });
-
-  it("shows PAT as configured when present", async () => {
-    const config = makeConfig([], tmpDir);
-    config.auth = { strategy: "auto", pat: "some-token" };
-
-    const result = await digStatus(config);
-
-    expect(result).toContain("Auth strategy:** auto");
-    expect(result).toContain("PAT:** configured");
   });
 
   it("returns sensible output with no repos configured", async () => {
@@ -58,12 +47,45 @@ describe("config summary", () => {
 
   it("displays config warnings", async () => {
     const config = makeConfig([], tmpDir);
-    config.warnings = ["Orphan LOCAL_REPOS entry 'stale'"];
+    config.warnings = ["Orphan localRepos entry 'stale'"];
 
     const result = await digStatus(config);
 
     expect(result).toContain("Config warnings");
-    expect(result).toContain("Orphan LOCAL_REPOS entry 'stale'");
+    expect(result).toContain("Orphan localRepos entry 'stale'");
+  });
+});
+
+// ── Per-repo auth display ──
+
+describe("per-repo auth display", () => {
+  it("renders auth strategy and PAT status under each repo", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const auth: GitAuth = { strategy: "auto", pat: "some-token" };
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir, "src", auth);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("Auth strategy:** auto");
+    expect(result).toContain("PAT:** configured");
+  });
+
+  it("shows PAT as not set when repo has no PAT", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("Auth strategy:** none");
+    expect(result).toContain("PAT:** not set");
   });
 });
 
@@ -87,14 +109,14 @@ describe("local repo checks", () => {
   it("reports FAILED for invalid local path", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
-    const repo: RepoConfig = {
-      name: "myrepo",
-      localPath: path.join(tmpDir, "nonexistent"),
-      managedSourcePath: path.join(tmpDir, "source", "myrepo"),
-      sourceRoot: "src",
-      discoveryMode: "explicit",
-      packages: [pkg],
-    };
+    const repo = makeRepoConfig(
+      {
+        name: "myrepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkg],
+      },
+      tmpDir,
+    );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digStatus(config);
@@ -111,14 +133,7 @@ describe("remote connectivity checks", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const bareDir = await createBareRepo(tmpDir, { "file.txt": "content" });
 
-    const repo: RepoConfig = {
-      name: "remoterepo",
-      url: bareDir,
-      managedSourcePath: path.join(tmpDir, "source", "remoterepo"),
-      sourceRoot: "src",
-      discoveryMode: "explicit",
-      packages: [],
-    };
+    const repo = makeRepoConfig({ name: "remoterepo", url: bareDir }, tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digStatus(config);
@@ -130,14 +145,10 @@ describe("remote connectivity checks", () => {
 
   it("reports FAILED for unreachable URL", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repo: RepoConfig = {
-      name: "badrepo",
-      url: "/nonexistent/repo.git",
-      managedSourcePath: path.join(tmpDir, "source", "badrepo"),
-      sourceRoot: "src",
-      discoveryMode: "explicit",
-      packages: [],
-    };
+    const repo = makeRepoConfig(
+      { name: "badrepo", url: "/nonexistent/repo.git" },
+      tmpDir,
+    );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digStatus(config);
@@ -158,14 +169,10 @@ describe("mixed results", () => {
     const goodPkg = makePkg("Good", "good", "src", cacheDir);
     const goodRepo = makeLocalRepo("good", repoDir, [goodPkg], tmpDir);
 
-    const badRepo: RepoConfig = {
-      name: "bad",
-      localPath: path.join(tmpDir, "nonexistent"),
-      managedSourcePath: path.join(tmpDir, "source", "bad"),
-      sourceRoot: "src",
-      discoveryMode: "explicit",
-      packages: [],
-    };
+    const badRepo = makeRepoConfig(
+      { name: "bad", localPath: path.join(tmpDir, "nonexistent") },
+      tmpDir,
+    );
 
     const config = makeConfig([goodRepo, badRepo], tmpDir, cacheDir);
 
@@ -200,14 +207,10 @@ describe("repo info display", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const bareDir = await createBareRepo(tmpDir, { "f.txt": "x" });
 
-    const repo: RepoConfig = {
-      name: "managed",
-      url: bareDir,
-      managedSourcePath: path.join(tmpDir, "source", "managed"),
-      sourceRoot: "src",
-      discoveryMode: "auto",
-      packages: [],
-    };
+    const repo = makeRepoConfig(
+      { name: "managed", url: bareDir, discoveryMode: "auto" },
+      tmpDir,
+    );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digStatus(config);

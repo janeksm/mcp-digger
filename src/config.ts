@@ -5,16 +5,29 @@ import * as path from "node:path";
 
 export type AuthStrategy = "auto" | "pat" | "none";
 
+/**
+ * Auth config block under a repo. `PAT` and `PAT-EnvVarName` are mutually
+ * exclusive — use inline for quick testing, env var indirection for anything
+ * that lands in the committed config.
+ */
+export interface AuthFile {
+  strategy?: AuthStrategy;
+  PAT?: string;
+  "PAT-EnvVarName"?: string;
+}
+
 export interface RepoDefinition {
   name: string;
   url?: string;
   sourceRoot?: string; // default "src"
   packages?: string[]; // if omitted → auto-discover at runtime
+  auth?: AuthFile;
 }
 
 export interface ConfigFile {
-  authStrategy?: AuthStrategy; // default "auto"
   debug?: boolean; // default false
+  /** Map of repo name → absolute or cwd-relative path to developer's local clone (Mode B). */
+  localRepos?: Record<string, string>;
   repos: RepoDefinition[];
 }
 
@@ -23,7 +36,7 @@ export interface ConfigFile {
 export interface RepoConfig {
   name: string;
   url?: string;
-  /** Absolute path to developer's local clone (Mode B), from MCP_DIGGER_LOCAL_REPOS. */
+  /** Absolute path to developer's local clone (Mode B), from `localRepos`. */
   localPath?: string;
   /** Absolute target dir for managed clones: `<managedSourceDir>/<repoName>`. */
   managedSourcePath: string;
@@ -33,6 +46,8 @@ export interface RepoConfig {
   discoveryMode: "explicit" | "auto";
   /** Populated immediately for explicit, lazily (by discoverPackages) for auto. */
   packages: PackageConfig[];
+  /** Resolved git auth for this repo. Never undefined — defaults to `{ strategy: "auto" }`. */
+  auth: GitAuth;
 }
 
 export interface PackageConfig {
@@ -53,7 +68,7 @@ export interface PackageConfig {
  */
 export interface GitAuth {
   strategy: AuthStrategy;
-  /** Personal Access Token from MCP_DIGGER_PAT. Undefined when not set or strategy is "none". */
+  /** Resolved Personal Access Token. Undefined when not set or strategy is "none". */
   pat?: string;
 }
 
@@ -63,7 +78,6 @@ export interface DiggerConfig {
   configPath: string;
   managedSourceDir: string;
   cacheDir: string;
-  auth: GitAuth;
   debug: boolean;
   repos: RepoConfig[];
   warnings: string[];
@@ -97,11 +111,6 @@ const TEST_PROJECT_SUFFIXES = [
 
 // ── Helpers ──
 
-/**
- * Parse an env var of the form `name1:value1,name2:value2` where the value may
- * itself contain colons. Splits each comma-separated entry on its FIRST colon.
- * Entries with no colon have an empty-string value (treated as malformed by caller).
- */
 function buildPackageConfig(
   name: string,
   repoName: string,
@@ -114,24 +123,6 @@ function buildPackageConfig(
     pathInRepo: sourceRoot === "." ? name : `${sourceRoot}/${name}`,
     cachePath: path.join(cacheDir, name),
   };
-}
-
-function parseKeyValueList(raw: string | undefined): Map<string, string> {
-  const result = new Map<string, string>();
-  if (!raw) return result;
-  for (const entry of raw.split(",")) {
-    const trimmed = entry.trim();
-    if (!trimmed) continue;
-    const colon = trimmed.indexOf(":");
-    if (colon < 0) {
-      result.set(trimmed, "");
-      continue;
-    }
-    const name = trimmed.slice(0, colon).trim();
-    const value = trimmed.slice(colon + 1).trim();
-    if (name) result.set(name, value);
-  }
-  return result;
 }
 
 // ── .env file loading ──
@@ -200,6 +191,83 @@ function mergeEnvFile(env: NodeJS.ProcessEnv, cwd: string): NodeJS.ProcessEnv {
   return merged;
 }
 
+// ── Per-repo auth resolution ──
+
+function isValidStrategy(v: string): v is AuthStrategy {
+  return VALID_AUTH_STRATEGIES.has(v as AuthStrategy);
+}
+
+/**
+ * Resolve a repo's `auth` block into a {@link GitAuth}. Applies mutual
+ * exclusion checks between inline `PAT` and `PAT-EnvVarName`, env var
+ * lookup, and strategy validation.
+ *
+ * Returns problems alongside the resolved auth so the caller can aggregate
+ * across repos without managing shared accumulator arrays.
+ */
+function resolveRepoAuth(
+  authFile: AuthFile | undefined,
+  env: NodeJS.ProcessEnv,
+  repoName: string,
+): { auth: GitAuth; errors: string[]; warnings: string[] } {
+  if (!authFile) {
+    return { auth: { strategy: DEFAULT_AUTH_STRATEGY }, errors: [], warnings: [] };
+  }
+
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Strategy
+  const rawStrategy = authFile.strategy?.trim().toLowerCase();
+  let strategy: AuthStrategy = DEFAULT_AUTH_STRATEGY;
+  if (rawStrategy) {
+    if (isValidStrategy(rawStrategy)) {
+      strategy = rawStrategy;
+    } else {
+      errors.push(
+        `Repo '${repoName}': invalid auth.strategy '${authFile.strategy}'. Must be one of: auto, pat, none.`,
+      );
+    }
+  }
+
+  // PAT / PAT-EnvVarName mutual exclusion
+  const inlinePat = authFile.PAT?.trim() || undefined;
+  const envVarName = authFile["PAT-EnvVarName"]?.trim() || undefined;
+
+  if (inlinePat && envVarName) {
+    errors.push(
+      `Repo '${repoName}': auth.PAT and auth.PAT-EnvVarName are mutually exclusive — set only one.`,
+    );
+  }
+
+  let resolvedPat: string | undefined;
+  if (inlinePat) {
+    resolvedPat = inlinePat;
+  } else if (envVarName) {
+    resolvedPat = env[envVarName]?.trim() || undefined;
+    if (!resolvedPat && strategy === "pat") {
+      errors.push(
+        `Repo '${repoName}': auth.strategy is 'pat' but env var '${envVarName}' (auth.PAT-EnvVarName) is not set or empty.`,
+      );
+    }
+  }
+
+  if (strategy === "pat" && !inlinePat && !envVarName) {
+    errors.push(
+      `Repo '${repoName}': auth.strategy is 'pat' but no PAT or PAT-EnvVarName is configured.`,
+    );
+  }
+  if (strategy === "none" && resolvedPat) {
+    warnings.push(
+      `Repo '${repoName}': auth.strategy is 'none' but a PAT is configured — it will be ignored.`,
+    );
+    resolvedPat = undefined;
+  }
+
+  const auth: GitAuth = resolvedPat ? { strategy, pat: resolvedPat } : { strategy };
+  return { auth, errors, warnings };
+}
+
 // ── Phase 1: loadConfig (synchronous, at startup) ──
 
 /**
@@ -207,7 +275,8 @@ function mergeEnvFile(env: NodeJS.ProcessEnv, cwd: string): NodeJS.ProcessEnv {
  * per-machine env vars, and return a validated {@link DiggerConfig}.
  *
  * If a `.env` file exists in `cwd`, its values are loaded as defaults —
- * actual environment variables always take precedence.
+ * actual environment variables always take precedence. `.env` is the intended
+ * source for per-machine secrets referenced by `auth.PAT-EnvVarName`.
  *
  * For repos with explicit `packages` arrays, {@link PackageConfig} entries are
  * built immediately. For repos without (auto-discover), `packages` starts empty
@@ -228,10 +297,10 @@ export function loadConfig(
   const configRelPath = env.DIGGER_CONFIG?.trim() || DEFAULT_CONFIG_PATH;
   const configPath = path.resolve(cwd, configRelPath);
 
-  let configFile: ConfigFile;
+  let configFile: ConfigFile & { authStrategy?: unknown };
   try {
     const raw = fs.readFileSync(configPath, "utf-8");
-    configFile = JSON.parse(raw) as ConfigFile;
+    configFile = JSON.parse(raw) as ConfigFile & { authStrategy?: unknown };
   } catch (e) {
     const err = e as NodeJS.ErrnoException;
     if (err.code === "ENOENT") {
@@ -240,6 +309,13 @@ export function loadConfig(
     throw new ConfigError([
       `Failed to parse config file ${configPath}: ${err.message}`,
     ]);
+  }
+
+  // Reject legacy top-level authStrategy so users get a clear migration error
+  if (configFile.authStrategy !== undefined) {
+    errors.push(
+      "Top-level 'authStrategy' is no longer supported — move it into each repo as 'auth.strategy'.",
+    );
   }
 
   if (
@@ -260,47 +336,27 @@ export function loadConfig(
     env.CACHE_DIR?.trim() || DEFAULT_CACHE_DIR,
   );
 
-  // ── MCP_DIGGER_LOCAL_REPOS (by repo name) ──
-  const localRepos = parseKeyValueList(env.MCP_DIGGER_LOCAL_REPOS);
-  for (const [name, repoPath] of localRepos) {
-    if (!repoPath) {
-      errors.push(
-        `MCP_DIGGER_LOCAL_REPOS entry '${name}' is malformed (expected 'repoName:path').`,
-      );
+  // ── localRepos (from config file) ──
+  const localRepos = new Map<string, string>();
+  if (configFile.localRepos !== undefined) {
+    if (
+      typeof configFile.localRepos !== "object" ||
+      Array.isArray(configFile.localRepos) ||
+      configFile.localRepos === null
+    ) {
+      errors.push("'localRepos' must be an object mapping repo name → path.");
+    } else {
+      for (const [name, rawPath] of Object.entries(configFile.localRepos)) {
+        if (typeof rawPath !== "string" || !rawPath.trim()) {
+          errors.push(
+            `localRepos entry '${name}' must be a non-empty string path.`,
+          );
+          continue;
+        }
+        localRepos.set(name, rawPath.trim());
+      }
     }
   }
-
-  // ── Auth strategy + PAT ──
-  const rawStrategy = configFile.authStrategy?.trim().toLowerCase();
-  const isValidStrategy = (v: string): v is AuthStrategy =>
-    VALID_AUTH_STRATEGIES.has(v as AuthStrategy);
-  if (rawStrategy && !isValidStrategy(rawStrategy)) {
-    errors.push(
-      `Invalid authStrategy '${rawStrategy}' in config file. Must be one of: auto, pat, none.`,
-    );
-  }
-  const strategy: AuthStrategy =
-    rawStrategy && isValidStrategy(rawStrategy)
-      ? rawStrategy
-      : DEFAULT_AUTH_STRATEGY;
-
-  const rawPat = env.MCP_DIGGER_PAT?.trim() || undefined;
-
-  if (strategy === "pat" && !rawPat) {
-    errors.push(
-      "authStrategy is 'pat' but MCP_DIGGER_PAT is not set. Provide a Personal Access Token or change authStrategy to 'auto'.",
-    );
-  }
-  if (strategy === "none" && rawPat) {
-    warnings.push(
-      "authStrategy is 'none' but MCP_DIGGER_PAT is set — the PAT will be ignored.",
-    );
-  }
-
-  const auth: GitAuth = {
-    strategy,
-    pat: strategy === "none" ? undefined : rawPat,
-  };
 
   // ── Build RepoConfig[] ──
   const repos: RepoConfig[] = [];
@@ -329,7 +385,7 @@ export function loadConfig(
       noSource.push(name);
     }
 
-    // Mark this repo name as consumed so we can detect orphan LOCAL_REPOS later
+    // Mark this repo name as consumed so we can detect orphan localRepos later
     localRepos.delete(name);
 
     const sourceRoot = repoDef.sourceRoot?.trim() || DEFAULT_SOURCE_ROOT;
@@ -352,6 +408,14 @@ export function loadConfig(
       }
     }
 
+    const { auth, errors: authErrors, warnings: authWarnings } = resolveRepoAuth(
+      repoDef.auth,
+      env,
+      name,
+    );
+    errors.push(...authErrors);
+    warnings.push(...authWarnings);
+
     repos.push({
       name,
       url,
@@ -360,20 +424,21 @@ export function loadConfig(
       sourceRoot,
       discoveryMode,
       packages,
+      auth,
     });
   }
 
   if (noSource.length > 0) {
     errors.push(
-      `Repos with no 'url' and no MCP_DIGGER_LOCAL_REPOS entry: ${noSource.join(", ")}. ` +
+      `Repos with no 'url' and no localRepos entry: ${noSource.join(", ")}. ` +
         "Every repo must have at least one source configured.",
     );
   }
 
-  // Orphan LOCAL_REPOS warnings
+  // Orphan localRepos warnings
   for (const name of localRepos.keys()) {
     warnings.push(
-      `MCP_DIGGER_LOCAL_REPOS contains '${name}' which does not match any repo in config — ignored.`,
+      `localRepos contains '${name}' which does not match any repo in config — ignored.`,
     );
   }
 
@@ -381,20 +446,12 @@ export function loadConfig(
     throw new ConfigError(errors);
   }
 
-  // ── Debug flag (env var takes precedence over config file) ──
-  const debugEnv = env.MCP_DIGGER_DEBUG?.trim().toLowerCase();
-  const debug =
-    debugEnv !== undefined
-      ? debugEnv === "1" || debugEnv === "true"
-      : configFile.debug === true;
-
   return {
     workspaceRoot: cwd,
     configPath,
     managedSourceDir,
     cacheDir,
-    auth,
-    debug,
+    debug: configFile.debug === true,
     repos,
     warnings,
   };

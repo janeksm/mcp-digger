@@ -4,11 +4,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as util from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { DiggerConfig, GitAuth, RepoConfig } from "./config.js";
+import type { RepoConfig } from "./config.js";
 import { ensureAllReady, ensureReady } from "./repoManager.js";
 import {
   createBareRepo as createBareRepoHelper,
   initRepo as initRepoHelper,
+  makeConfig as makeConfigHelper,
+  makeRepoConfig as makeRepoConfigHelper,
 } from "./testHelpers.js";
 
 const execFile = util.promisify(child_process.execFile);
@@ -25,34 +27,11 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-const noAuth: GitAuth = { strategy: "none" };
-
 const initRepo = (files: Record<string, string>) => initRepoHelper(tmpDir, files);
 const createBareRepo = (files: Record<string, string>) => createBareRepoHelper(tmpDir, files);
-
-function makeConfig(repos: RepoConfig[], auth: GitAuth = noAuth): DiggerConfig {
-  return {
-    workspaceRoot: tmpDir,
-    configPath: path.join(tmpDir, ".digger", "config.json"),
-    managedSourceDir: path.join(tmpDir, ".digger", "source"),
-    cacheDir: path.join(tmpDir, ".digger", "cache"),
-    auth,
-    repos,
-    warnings: [],
-  };
-}
-
-function makeRepoConfig(overrides: Partial<RepoConfig> & { name: string }): RepoConfig {
-  return {
-    url: undefined,
-    localPath: undefined,
-    managedSourcePath: path.join(tmpDir, ".digger", "source", overrides.name),
-    sourceRoot: "src",
-    discoveryMode: "explicit",
-    packages: [],
-    ...overrides,
-  };
-}
+const makeConfig = (repos: RepoConfig[]) => makeConfigHelper(repos, tmpDir);
+const makeRepoConfig = (overrides: Partial<RepoConfig> & { name: string }) =>
+  makeRepoConfigHelper(overrides, tmpDir);
 
 // ── Mode B (local path) ──
 

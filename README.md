@@ -4,15 +4,16 @@ MCP server that gives Claude Code progressive, on-demand access to internal .NET
 
 ## How It Works
 
-Three MCP tools, each level digs deeper:
+Four MCP tools. One for diagnosing setup, three for escalating detail as needed:
 
 | Tool | What it returns | Token cost |
 |------|----------------|------------|
+| `dig_status` | Health check — validates config and tests git connectivity for every configured repo | Very low |
 | `dig_overview` | Markdown summary of all packages: purpose, key types, conventions | Low |
-| `dig_signatures` | Stripped .cs files: public signatures + XML docs, bodies removed | Medium |
+| `dig_signatures` | Stripped `.cs` files: public signatures + XML docs, bodies removed | Medium |
 | `dig_file` | Full source of a single file | High |
 
-Claude Code decides when to escalate based on the tool descriptions — no manual intervention needed.
+Claude Code decides when to escalate based on the tool descriptions — no manual intervention needed. Call `dig_status` first when something looks off (auth error, stale data) to see exactly what the server sees.
 
 ## Quick Start
 
@@ -32,15 +33,21 @@ npm install -g mcp-digger
       "name": "my-shared-libs",
       "url": "https://gitlab.company.com/shared/libs.git",
       "sourceRoot": "src",
-      "packages": ["MyCompany.Core", "MyCompany.Auth"]
+      "packages": ["MyCompany.Core", "MyCompany.Auth"],
+      "auth": {
+        "strategy": "pat",
+        "PAT-EnvVarName": "MY_GITLAB_PAT"
+      }
     }
   ]
 }
 ```
 
+Then put `MY_GITLAB_PAT=glpat-...` in a `.env` file in the solution root (never commit it).
+
 ### 3. Add MCP server config
 
-Create `.mcp/mcp-config.json` in your .NET solution root:
+Create `.mcp.json` in your .NET solution root:
 
 ```json
 {
@@ -69,6 +76,7 @@ Create `.mcp/mcp-config.json` in your .NET solution root:
 
 This project uses internal NuGet packages. Use mcp-digger tools to understand them:
 
+- **`dig_status`** — run first if anything looks broken (auth errors, missing packages)
 - **`dig_overview`** — call first for any task involving shared libraries
 - **`dig_signatures`** — when you need exact type or method signatures
 - **`dig_file`** — only when you need implementation detail of a specific file
@@ -110,30 +118,13 @@ With the `.mcp/mcp-config.json` shown in Quick Start, just open Claude Code in y
 ### Verifying it works
 
 1. Open Claude Code in the .NET solution directory
-2. Ask Claude something like: *"What shared internal packages are available?"*
-3. Claude should call `dig_overview` and return a summary
-4. Ask a follow-up like: *"Show me the signatures for MyCompany.Core"*
-5. Claude should call `dig_signatures` and return stripped .cs files
+2. Ask Claude: *"Run dig_status and show me what's configured"* — confirms the server is wired up and repos are reachable
+3. Ask a follow-up like: *"What shared internal packages are available?"* — Claude should call `dig_overview`
+4. Ask: *"Show me the signatures for MyCompany.Core"* — Claude should call `dig_signatures`
 
 ### Debug logging
 
-Enable file-based debug logging to see what the MCP server is doing:
-
-```json
-{
-  "mcpServers": {
-    "mcp-digger": {
-      "command": "npx",
-      "args": ["mcp-digger"],
-      "env": {
-        "MCP_DIGGER_DEBUG": "1"
-      }
-    }
-  }
-}
-```
-
-Or set `"debug": true` in `.digger/config.json`. Logs are written to `.digger/debug.log`.
+Enable file-based debug logging to see what the MCP server is doing. Set `"debug": true` in `.digger/config.json`. Logs are written to `.digger/debug.log`.
 
 ## Configuration
 
@@ -142,7 +133,7 @@ Or set `"debug": true` in `.digger/config.json`. Logs are written to `.digger/de
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `repos` | Yes | — | Array of repo definitions |
-| `authStrategy` | No | `"auto"` | Git auth: `"auto"`, `"pat"`, or `"none"` |
+| `localRepos` | No | — | Object `{ repoName: path }` mapping repo names to local clones (Mode B) |
 | `debug` | No | `false` | Enable debug logging to `.digger/debug.log` |
 
 Per repo:
@@ -150,48 +141,88 @@ Per repo:
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `name` | Yes | — | Repo label, used as clone dir name |
-| `url` | No | — | Git clone URL (required unless using local repos) |
+| `url` | No | — | Git clone URL (required unless the repo has a `localRepos` entry) |
 | `sourceRoot` | No | `"src"` | Relative path where package dirs live |
 | `packages` | No | auto-discover | Explicit list of package names |
+| `auth` | No | `{ strategy: "auto" }` | Git auth — see [Auth](#auth) below |
 
 When `packages` is omitted, mcp-digger scans the repo for directories containing a matching `.csproj` file (excluding test projects).
-
-### Environment Variables
-
-Set these per-machine (never commit). You can provide them via:
-
-1. **Actual environment variables** (highest priority)
-2. **`.env` file** in the .NET solution root (loaded automatically, never commit)
-3. **`.digger/config.json`** defaults (lowest priority)
-
-| Variable | Description |
-|----------|-------------|
-| `MCP_DIGGER_LOCAL_REPOS` | Use local clones instead of managed downloads. Format: `repoName:path,repoName:path` |
-| `MCP_DIGGER_PAT` | Personal Access Token for private git repos |
-| `MCP_DIGGER_DEBUG` | Set to `1` to enable debug logging (overrides config file) |
-| `DIGGER_CONFIG` | Override config file path (default: `.digger/config.json`) |
-| `MANAGED_SOURCE_DIR` | Override managed clone dir (default: `.digger/source`) |
-| `CACHE_DIR` | Override cache dir (default: `.digger/cache`) |
-
-A `.env.sample` file is included as a template. Copy it to `.env` and fill in your values:
-
-```bash
-cp .env.sample .env
-```
 
 ### Two Repo Modes
 
 **Mode A — Managed download** (default): mcp-digger shallow-clones the repo into `.digger/source/<repoName>` and keeps it updated automatically.
 
-**Mode B — Local repo**: When `MCP_DIGGER_LOCAL_REPOS` maps a repo name to a local path, mcp-digger reads from your existing clone. It never fetches or modifies your repo.
+**Mode B — Local repo**: When `localRepos` maps a repo name to a local path, mcp-digger reads from your existing clone. It never fetches or modifies your repo. If the local path is missing or invalid but `url` is configured, it falls back to Mode A with a warning.
 
-### Auth Strategies
+Example:
+
+```json
+{
+  "localRepos": {
+    "my-shared-libs": "C:/dev/my-shared-libs"
+  },
+  "repos": [
+    { "name": "my-shared-libs", "url": "https://gitlab.company.com/shared/libs.git" }
+  ]
+}
+```
+
+### Auth
+
+Each repo has its own `auth` block. If omitted, the default is `{ "strategy": "auto" }` with no PAT.
 
 | Strategy | Behaviour |
 |----------|-----------|
 | `"auto"` | Try unauthenticated clone first; fall back to PAT if set |
-| `"pat"` | Always use PAT (fails if `MCP_DIGGER_PAT` not set) |
-| `"none"` | Never inject credentials |
+| `"pat"` | Always use PAT (fails at load if no PAT is configured) |
+| `"none"` | Never inject credentials, even if a PAT is configured |
+
+Two ways to supply a PAT — **mutually exclusive**:
+
+| Field | Description |
+|-------|-------------|
+| `auth.PAT` | Inline token. Convenient for local testing; **never commit this** |
+| `auth.PAT-EnvVarName` | Name of an env var to read the PAT from. This is what you want in the committed config |
+
+Example with env-var indirection:
+
+```json
+{
+  "repos": [
+    {
+      "name": "public-repo",
+      "url": "https://github.com/owner/public.git",
+      "auth": { "strategy": "none" }
+    },
+    {
+      "name": "private-repo",
+      "url": "https://gitlab.company.com/private.git",
+      "auth": {
+        "strategy": "pat",
+        "PAT-EnvVarName": "COMPANY_GITLAB_PAT"
+      }
+    }
+  ]
+}
+```
+
+Put `COMPANY_GITLAB_PAT=glpat-...` in `.env` (or set it in your shell). mcp-digger loads `.env` automatically — actual environment variables always win over `.env` values.
+
+### Environment Variables
+
+Only three env vars are used, all optional overrides for paths:
+
+| Variable | Description |
+|----------|-------------|
+| `DIGGER_CONFIG` | Override config file path (default: `.digger/config.json`) |
+| `MANAGED_SOURCE_DIR` | Override managed clone dir (default: `.digger/source`) |
+| `CACHE_DIR` | Override cache dir (default: `.digger/cache`) |
+
+All per-machine secrets (PATs) go through user-chosen env vars referenced by `auth.PAT-EnvVarName`. A `.env.sample` file is included as a template:
+
+```bash
+cp .env.sample .env
+```
 
 ## Development
 

@@ -2,7 +2,7 @@ import * as child_process from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as util from "node:util";
-import type { DiggerConfig, PackageConfig, RepoConfig } from "./config.js";
+import type { DiggerConfig, GitAuth, PackageConfig, RepoConfig } from "./config.js";
 
 const execFile = util.promisify(child_process.execFile);
 
@@ -58,6 +58,7 @@ export function makeLocalRepo(
   packages: PackageConfig[],
   tmpDir: string,
   sourceRoot = "src",
+  auth: GitAuth = { strategy: "none" },
 ): RepoConfig {
   return {
     name,
@@ -66,6 +67,28 @@ export function makeLocalRepo(
     sourceRoot,
     discoveryMode: "explicit",
     packages,
+    auth,
+  };
+}
+
+/**
+ * Generic RepoConfig factory for tests. Fills in sensible defaults
+ * (`sourceRoot: "src"`, `discoveryMode: "explicit"`, empty `packages`,
+ * `auth: none`, `managedSourcePath: <tmpDir>/source/<name>`).
+ * Use this when you need a URL-only or invalid-localPath repo; for the
+ * common happy-path local repo, `makeLocalRepo` is more direct.
+ */
+export function makeRepoConfig(
+  overrides: Partial<RepoConfig> & { name: string },
+  tmpDir: string,
+): RepoConfig {
+  return {
+    managedSourcePath: path.join(tmpDir, "source", overrides.name),
+    sourceRoot: "src",
+    discoveryMode: "explicit",
+    packages: [],
+    auth: { strategy: "none" },
+    ...overrides,
   };
 }
 
@@ -80,7 +103,6 @@ export function makeConfig(
     configPath: path.join(tmpDir, ".digger/config.json"),
     managedSourceDir: path.join(tmpDir, "source"),
     cacheDir: cacheDir ?? path.join(tmpDir, "cache"),
-    auth: { strategy: "none" },
     debug: false,
     repos,
     warnings: [],
