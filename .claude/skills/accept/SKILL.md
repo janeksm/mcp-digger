@@ -26,7 +26,7 @@ Finalize the current implementation step by committing and updating TODO.md.
 4. **After user confirms — commit.** Follow the standard git commit flow:
    - `git status` and `git diff` to review changes
    - `git add` the relevant source and test files (not TODO.md yet)
-   - Commit with a message like: `feat: implement <module> (step N)`
+   - Commit message: use the Notes column text from the TODO.md step as the commit message subject line, prefixed with the conventional commit type and step number — e.g. `feat: dig_status MCP tool, lsRemote() connectivity check (step 15)`. Keep it short — one line, no body paragraph.
    - Include `Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>`
 
 5. **Mark step complete in TODO.md.**
@@ -39,3 +39,5 @@ Finalize the current implementation step by committing and updating TODO.md.
 7. **Amend commit with doc updates.** Stage the doc files and amend: `git add TODO.md DESIGN.md && git commit --amend --no-edit`
 
 8. **Report.** Show the final commit hash and the updated TODO.md status.
+
+9. **Compact context.** After reporting, compact the conversation to free up context space. Derive a short title (3–5 keywords) from the step's Notes column and use it as the compact summary — e.g. for notes "dig_status MCP tool, lsRemote() connectivity check" → `/compact dig_status tool lsRemote connectivity`. Tell the user to run the command: `/compact <keywords>`.
