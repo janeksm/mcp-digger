@@ -5,6 +5,7 @@ Node.js/TypeScript MCP server that gives Claude Code progressive access to inter
 ## Claude Rules
 
 - Always use context7 when I need code generation, setup or configuration steps, or library/API documentation.
+- Use the mcp-builder skill when you need deeper understanding of MCP best practices, protocol concepts, tool design patterns, annotations, input/output schemas, or transport options.
 - Don't combine `cd` with other commands (e.g. `cd /path && git status`). Run commands directly using absolute paths instead (e.g. `git -C /path status`). Compound commands can't be matched against the allowed permissions list, causing unnecessary confirmation prompts.
 
 ## Build & Test
@@ -62,4 +63,4 @@ Env vars (optional path overrides only — no secrets):
 
 ## Implementation Status
 
-Progress tracked in [TODO.md](TODO.md). Steps 1–9 and 11 are done. Step 10 (read version from package.json instead of hardcoding in McpServer constructor) is not started.
+Progress tracked in [TODO.md](TODO.md). Phase 1 (steps 1–17) is complete. Phase 2 (MCP compliance & security hardening) is in progress.

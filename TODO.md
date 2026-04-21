@@ -24,3 +24,24 @@
 | 10 | `index.ts` | done | d981129 | DRY version: read from package.json instead of hardcoding in McpServer constructor |
 
 **Statuses:** `—` not started, `in-progress` active, `done` committed, `blocked` waiting on something
+
+---
+
+## Phase 2 — MCP Compliance & Security Hardening
+
+> Review against MCP best practices and security findings from [TODO.SEC.md](TODO.SEC.md).
+
+| # | Task | Importance | Status | Rationale | Files |
+|---|------|-----------|--------|-----------|-------|
+| 1 | Add `zod` as direct dependency in package.json | Critical | done | Imported in digSignatures + digFile but only available as transitive dep of `@modelcontextprotocol/sdk`. Future SDK update could break builds. | `package.json` |
+| 2 | Add complete `annotations` to all four tools | High | — | MCP requires `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`. Only `dig_status` has partial annotations; other three tools have none. Clients treat unannotated tools as potentially destructive. | `src/tools/digStatus.ts`, `src/tools/digOverview.ts`, `src/tools/digSignatures.ts`, `src/tools/digFile.ts` |
+| 3 | Add `.describe()` to Zod input schema parameters | High | — | `dig_signatures` and `dig_file` have bare `z.string()` params with no descriptions. MCP guide requires input schemas with descriptions surfaced to clients as parameter-level help. | `src/tools/digSignatures.ts`, `src/tools/digFile.ts` |
+| 4 | Validate package names against safe charset (SEC #4) | High | — | Package names become path components via `path.join`. `"../evil"` escapes cache dir. Reject names not matching `/^[A-Za-z0-9._-]+$/`. | `src/config.ts` |
+| 5 | Restrict repo URL schemes to `https:`/`ssh:` (SEC #5) | High | — | `file:///` URL clones from local filesystem; `git://` is unauthenticated MITM-vulnerable. Parse with `new URL()`, allow `git@host:path` SSH shorthand. | `src/config.ts` |
+| 6 | Cap file size in `dig_file` + add CHARACTER_LIMIT (SEC #3) | High | — | `readFile` can return up to 10 MB. Large responses inflate LLM context / DoS sessions. Cap `dig_file` at ~1 MB, add 25K-char truncation to `dig_overview` and `dig_signatures`. | `src/tools/digFile.ts`, `src/tools/digOverview.ts`, `src/tools/digSignatures.ts` |
+| 7 | Return `isError: true` on error responses | High | — | MCP `CallToolResult` supports `isError` boolean. Currently all tools return errors as normal text. Without the flag Claude can't distinguish errors from successful-but-empty results. | `src/tools/digFile.ts`, `src/tools/digSignatures.ts`, `src/tools/digOverview.ts` |
+| 8 | Atomic `meta.json` writes + per-repo mutex (SEC #6, #10) | High | — | Non-atomic writes corrupt cache on crash. Concurrent tool calls interleave invalidate-regenerate. Write to `.tmp` then rename; promise-map mutex keyed by `repo.name`. | `src/cacheManager.ts`, `src/repoManager.ts` |
+| 9 | Prototype-pollution hardening on `JSON.parse` (SEC #7) | Medium | — | `JSON.parse(raw) as T` trusts shape. Construct fresh objects with only known fields. Low practical impact but cheap defense-in-depth. | `src/config.ts`, `src/cacheManager.ts` |
+| 10 | Cap fan-out in `discoverPackages` (SEC #8) | Medium | — | Unbounded `Promise.all` over all candidate dirs. `.slice(0, MAX)` or concurrency limiter. Log warning if cap hit. | `src/config.ts` |
+| 11 | Close SEC #9 — log-file size cap already exists | Done | done | Verified: `MAX_LOG_SIZE = 5 * 1024 * 1024` at `logger.ts:12`, truncation at lines 58-63. Update TODO.SEC.md. | `TODO.SEC.md` |
+| 12 | Low/info items: defensive filePath in readFile, skip symlinks, confirm SDK Zod enforcement (SEC #11, #12, #13) | Low | — | Belt-and-braces path validation in `gitClient.readFile`; `lstat` to skip symlinks in `discoverPackages`; manual test to confirm SDK validates Zod schemas pre-handler. | `src/gitClient.ts`, `src/config.ts` |

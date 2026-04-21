@@ -41,3 +41,14 @@ Bootstrap a working session by loading key project docs and showing progress. Do
    Do **not** call `EnterPlanMode`. Stop and wait for the user's reply. On the next turn:
    - If the user picks **A**: begin planning the first remaining step from the TODO table (enter plan mode then).
    - If the user picks **B**: ask them for the task description, then plan that task.
+
+## Task Workflow
+
+Each TODO task follows this status lifecycle:
+
+1. **Start work** — set status to `in-progress` in TODO.md.
+2. **Implement & verify** — make changes, run `npm run typecheck && npm run lint && npm test`.
+3. **Ready for accept** — leave status as `in-progress`. Do not set `done` manually.
+4. **`/accept <step>`** — only the user running `/accept` commits and marks the step `done`.
+
+Never skip steps or set status to `done` directly.
