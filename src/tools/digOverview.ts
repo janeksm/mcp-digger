@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { TOOL_ANNOTATIONS } from "./shared.js";
 import {
   invalidate,
   isFresh,
@@ -31,7 +32,11 @@ export function registerDigOverview(
 ): void {
   server.registerTool(
     "dig_overview",
-    { title: "Dig Overview", description: DESCRIPTION },
+    {
+      title: "Dig Overview",
+      description: DESCRIPTION,
+      annotations: TOOL_ANNOTATIONS,
+    },
     async () => ({
       content: [{ type: "text" as const, text: await digOverview(config) }],
     }),

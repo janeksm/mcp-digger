@@ -18,7 +18,7 @@
 |-------|-------|
 | File | `src/tools/digStatus.ts` |
 | Input | *(none)* |
-| Annotations | `readOnlyHint: true`, `destructiveHint: false` |
+| Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
 **Purpose:** Validates config and tests git connectivity for all configured repos. Call first to diagnose setup issues before digging.
 
@@ -30,7 +30,7 @@
 |-------|-------|
 | File | `src/tools/digOverview.ts` |
 | Input | *(none)* |
-| Annotations | *(none)* |
+| Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
 **Purpose:** Returns a markdown overview of all configured packages — purpose, key public types/interfaces, architectural conventions, usage patterns. Call this first before working with internal packages.
 
@@ -42,7 +42,7 @@
 |-------|-------|
 | File | `src/tools/digSignatures.ts` |
 | Input | `packageName: string` |
-| Annotations | *(none)* |
+| Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
 **Purpose:** Returns stripped C# source — public type declarations, method signatures, property definitions, XML doc comments. Method bodies replaced with placeholder. Call when the overview isn't enough (exact overloads, generics, constraints).
 
@@ -54,7 +54,7 @@
 |-------|-------|
 | File | `src/tools/digFile.ts` |
 | Input | `packageName: string`, `filePath: string` |
-| Annotations | *(none)* |
+| Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
 **Purpose:** Full source of a single file. Call only when implementation detail is needed — tracing behaviour, understanding algorithms, debugging. Avoid speculative calls.
 

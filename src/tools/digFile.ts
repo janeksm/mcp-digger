@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { TOOL_ANNOTATIONS } from "./shared.js";
 import { z } from "zod";
 import type { DiggerConfig } from "../config.js";
 import { findPackage, formatUnknownPackage } from "../config.js";
@@ -34,6 +35,7 @@ export function registerDigFile(
         packageName: z.string(),
         filePath: z.string(),
       },
+      annotations: TOOL_ANNOTATIONS,
     },
     async ({ packageName, filePath }) => ({
       content: [

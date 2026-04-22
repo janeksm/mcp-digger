@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { DiggerConfig, GitAuth, RepoConfig } from "../config.js";
+import { TOOL_ANNOTATIONS } from "./shared.js";
 import * as gitClient from "../gitClient.js";
 import type { LsRemoteResult } from "../gitClient.js";
 import { debug } from "../logger.js";
@@ -32,7 +33,7 @@ export function registerDigStatus(
     {
       title: "Dig Status",
       description: DESCRIPTION,
-      annotations: { readOnlyHint: true, destructiveHint: false },
+      annotations: TOOL_ANNOTATIONS,
     },
     async () => ({
       content: [{ type: "text" as const, text: await digStatus(config) }],
