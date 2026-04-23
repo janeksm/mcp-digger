@@ -41,7 +41,7 @@
 | Field | Value |
 |-------|-------|
 | File | `src/tools/digSignatures.ts` |
-| Input | `packageName: string` |
+| Input | `packageName: string` — Exact name of the internal NuGet package (e.g. 'MyCompany.Core') |
 | Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
 **Purpose:** Returns stripped C# source — public type declarations, method signatures, property definitions, XML doc comments. Method bodies replaced with placeholder. Call when the overview isn't enough (exact overloads, generics, constraints).
@@ -53,7 +53,7 @@
 | Field | Value |
 |-------|-------|
 | File | `src/tools/digFile.ts` |
-| Input | `packageName: string`, `filePath: string` |
+| Input | `packageName: string` — Exact name of the internal NuGet package (e.g. 'MyCompany.Core'); `filePath: string` — File path relative to the package root, as listed by dig_signatures (e.g. 'Services/FooService.cs') |
 | Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
 **Purpose:** Full source of a single file. Call only when implementation detail is needed — tracing behaviour, understanding algorithms, debugging. Avoid speculative calls.

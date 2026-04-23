@@ -1,6 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { TOOL_ANNOTATIONS } from "./shared.js";
-import { z } from "zod";
+import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS } from "./shared.js";
 import {
   invalidate,
   isFresh,
@@ -39,7 +38,7 @@ export function registerDigSignatures(
     {
       title: "Dig Signatures",
       description: DESCRIPTION,
-      inputSchema: { packageName: z.string() },
+      inputSchema: { packageName: PACKAGE_NAME_PARAM },
       annotations: TOOL_ANNOTATIONS,
     },
     async ({ packageName }) => ({

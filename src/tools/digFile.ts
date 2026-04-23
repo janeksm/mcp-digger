@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { TOOL_ANNOTATIONS } from "./shared.js";
+import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS } from "./shared.js";
 import { z } from "zod";
 import type { DiggerConfig } from "../config.js";
 import { findPackage, formatUnknownPackage } from "../config.js";
@@ -32,8 +32,8 @@ export function registerDigFile(
       title: "Dig File",
       description: DESCRIPTION,
       inputSchema: {
-        packageName: z.string(),
-        filePath: z.string(),
+        packageName: PACKAGE_NAME_PARAM,
+        filePath: z.string().describe("File path relative to the package root, as listed by dig_signatures (e.g. 'Services/FooService.cs')"),
       },
       annotations: TOOL_ANNOTATIONS,
     },
