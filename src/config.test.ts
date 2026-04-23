@@ -7,6 +7,7 @@ import {
   discoverPackages,
   findPackage,
   findRepo,
+  isValidPackageName,
   loadConfig,
   parseEnvFile,
   type ConfigFile,
@@ -57,6 +58,34 @@ function minimalConfig(
     ],
   };
 }
+
+// ── isValidPackageName ──
+
+describe("isValidPackageName", () => {
+  it.each([
+    "MyCompany.Core",
+    "My-Package_v2.0",
+    "A",
+    "123",
+    "System.Text.Json",
+  ])("accepts valid name: %s", (name) => {
+    expect(isValidPackageName(name)).toBe(true);
+  });
+
+  it.each([
+    ["../evil", "path traversal"],
+    ["foo/bar", "forward slash"],
+    ["foo\\bar", "backslash"],
+    ["", "empty string"],
+    ["foo bar", "space"],
+    [".", "single dot"],
+    ["..", "double dot"],
+    ["pkg\0name", "null byte"],
+    ["pkg@1.0", "at sign"],
+  ])("rejects invalid name: %s (%s)", (name) => {
+    expect(isValidPackageName(name)).toBe(false);
+  });
+});
 
 // ── Phase 1: loadConfig tests ──
 
@@ -407,6 +436,46 @@ describe("loadConfig — fatal errors", () => {
       expect(err.problems.length).toBeGreaterThanOrEqual(1);
     }
   });
+
+  it("throws on package name with path traversal characters", () => {
+    const config: ConfigFile = {
+      repos: [
+        { name: "bsf", url: "https://a.git", packages: ["../evil"] },
+      ],
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(/invalid characters/);
+  });
+
+  it("throws on package name with forward slash", () => {
+    const config: ConfigFile = {
+      repos: [
+        { name: "bsf", url: "https://a.git", packages: ["foo/bar"] },
+      ],
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(/invalid characters/);
+  });
+
+  it("throws on repo name with path traversal characters", () => {
+    const config: ConfigFile = {
+      repos: [
+        { name: "../evil", url: "https://a.git", packages: ["Pkg"] },
+      ],
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(/invalid characters/);
+  });
+
+  it("throws on wildcard repo name with invalid prefix", () => {
+    const config: ConfigFile = {
+      repos: [
+        { name: "my repo.*", url: "https://a.git" },
+      ],
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(/invalid characters/);
+  });
 });
 
 describe("loadConfig — per-repo auth", () => {
@@ -724,6 +793,24 @@ describe("discoverPackages", () => {
     const result = await discoverPackages(repoDir, rc, "/tmp/cache");
     expect(result).toHaveLength(1);
     expect(result[0]!.pathInRepo).toBe("libs/packages/MyCompany.Core");
+  });
+
+  it("skips directories with invalid names", async () => {
+    const repoDir = path.join(tmpDir, "repo");
+    const srcDir = path.join(repoDir, "src");
+    // Valid package
+    const goodDir = path.join(srcDir, "MyCompany.Core");
+    fs.mkdirSync(goodDir, { recursive: true });
+    fs.writeFileSync(path.join(goodDir, "MyCompany.Core.csproj"), "<Project />");
+    // Invalid name — contains space
+    const badDir = path.join(srcDir, "Bad Package");
+    fs.mkdirSync(badDir, { recursive: true });
+    fs.writeFileSync(path.join(badDir, "Bad Package.csproj"), "<Project />");
+
+    const rc = makeRepoConfig();
+    const result = await discoverPackages(repoDir, rc, "/tmp/cache");
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe("MyCompany.Core");
   });
 });
 

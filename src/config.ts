@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { debug } from "./logger.js";
 
 // ── Config file schema (what .digger/config.json contains) ──
 
@@ -119,6 +120,14 @@ const TEST_PROJECT_SUFFIXES = [
 ];
 
 // ── Helpers ──
+
+const SAFE_NAME_RE = /^[A-Za-z0-9._-]+$/;
+const SAFE_NAME_HINT = "Names must match /^[A-Za-z0-9._-]+$/.";
+
+export function isValidPackageName(name: string): boolean {
+  if (name === "." || name === "..") return false;
+  return SAFE_NAME_RE.test(name);
+}
 
 function buildPackageConfig(
   name: string,
@@ -398,6 +407,14 @@ export function loadConfig(
       continue;
     }
 
+    const nameBase = isWildcard ? name.slice(0, -1) : name;
+    if (nameBase && !isValidPackageName(nameBase)) {
+      errors.push(
+        `Repo '${name}': name contains invalid characters. ${SAFE_NAME_HINT}`,
+      );
+      continue;
+    }
+
     let namePrefix: string | undefined;
     let slug: string;
     if (isWildcard) {
@@ -443,6 +460,12 @@ export function loadConfig(
       for (const pkgName of repoDef.packages) {
         const trimmed = pkgName.trim();
         if (!trimmed) continue;
+        if (!isValidPackageName(trimmed)) {
+          errors.push(
+            `Repo '${name}': package name '${trimmed}' contains invalid characters. ${SAFE_NAME_HINT}`,
+          );
+          continue;
+        }
         if (allPackageNames.has(trimmed)) {
           errors.push(`Duplicate package name across repos: '${trimmed}'.`);
           continue;
@@ -527,11 +550,15 @@ export async function discoverPackages(
     return [];
   }
 
-  const candidates = entries.filter(
-    (e) =>
-      e.isDirectory() &&
-      !TEST_PROJECT_SUFFIXES.some((s) => e.name.endsWith(s)),
-  );
+  const candidates = entries.filter((e) => {
+    if (!e.isDirectory()) return false;
+    if (TEST_PROJECT_SUFFIXES.some((s) => e.name.endsWith(s))) return false;
+    if (!isValidPackageName(e.name)) {
+      debug("config", "discoverPackages: skipping directory with invalid name:", e.name);
+      return false;
+    }
+    return true;
+  });
 
   const results = await Promise.all(
     candidates.map(async (entry) => {
