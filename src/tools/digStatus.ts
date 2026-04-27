@@ -21,9 +21,6 @@ auth or network issues, or confirm repos are reachable before digging into sourc
 
 // ── Public API ──
 
-/**
- * Register the dig_status tool on an MCP server.
- */
 export function registerDigStatus(
   server: McpServer,
   config: DiggerConfig,

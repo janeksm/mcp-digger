@@ -86,6 +86,7 @@ Each tool's description guides Claude on when to escalate to the next level.
 ## Shared Conventions
 
 - **Never throws.** All tools return a usable text response on every error path (stale cache fallback, unavailable messages, valid path listings).
+- **`isError` on failures.** Tools that can fail (`dig_file`, `dig_signatures`, `dig_overview`) return `isError: true` on error paths so the LLM can distinguish failures from successful-but-empty results. Internally, each tool function returns `ToolResult { text, isError }` using `toolSuccess()`/`toolError()` constructors from `shared.ts`. The `toCallToolResult()` helper converts this to the MCP wire format, spreading `isError` only when true.
 - **Content format.** All tools return `{ content: [{ type: "text", text }] }` — standard `CallToolResult`.
 - **Config-driven.** Tools receive resolved `DiggerConfig` at registration time. They never read env vars directly.
 - **Cache-aware.** Overview and signatures tools use commit-hash-based cache invalidation. File tool reads directly from git.

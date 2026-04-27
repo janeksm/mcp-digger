@@ -52,8 +52,10 @@ describe("digFile", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digFile(config, "MyLib", "Domain/Entity.cs");
+    const full = await digFile(config, "MyLib", "Domain/Entity.cs");
+    const result = full.text;
 
+    expect(full.isError).toBe(false);
     expect(result).toContain("# MyLib — Domain/Entity.cs");
     expect(result).toContain("```csharp");
     expect(result).toContain("Console.WriteLine(Name)");
@@ -70,7 +72,7 @@ describe("digFile", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digFile(config, "MyLib", "config.json");
+    const { text: result } = await digFile(config, "MyLib", "config.json");
 
     expect(result).toContain("```json");
     expect(result).toContain('"key": "value"');
@@ -90,19 +92,21 @@ describe("unknown package", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digFile(config, "NonExistent", "Any.cs");
+    const full = await digFile(config, "NonExistent", "Any.cs");
 
-    expect(result).toContain("Unknown package 'NonExistent'");
-    expect(result).toContain("Alpha");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("Unknown package 'NonExistent'");
+    expect(full.text).toContain("Alpha");
   });
 
   it("returns message when no packages configured", async () => {
     const config = makeConfig([], tmpDir);
 
-    const result = await digFile(config, "Anything", "Any.cs");
+    const full = await digFile(config, "Anything", "Any.cs");
 
-    expect(result).toContain("Unknown package 'Anything'");
-    expect(result).toContain("No packages are configured");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("Unknown package 'Anything'");
+    expect(full.text).toContain("No packages are configured");
   });
 
   it("hints to run dig_overview when a wildcard repo is unresolved", async () => {
@@ -111,11 +115,12 @@ describe("unknown package", () => {
     const wildcard = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
     const config = makeConfig([wildcard], tmpDir, cacheDir);
 
-    const result = await digFile(config, "MyCompany.Core", "Something.cs");
+    const full = await digFile(config, "MyCompany.Core", "Something.cs");
 
-    expect(result).toContain("Unknown package 'MyCompany.Core'");
-    expect(result).toMatch(/wildcard repo.*'MyCompany\.\*'.*have not resolved/i);
-    expect(result).toContain("dig_overview");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("Unknown package 'MyCompany.Core'");
+    expect(full.text).toMatch(/wildcard repo.*'MyCompany\.\*'.*have not resolved/i);
+    expect(full.text).toContain("dig_overview");
   });
 });
 
@@ -133,12 +138,13 @@ describe("invalid file path", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digFile(config, "MyLib", "DoesNotExist.cs");
+    const full = await digFile(config, "MyLib", "DoesNotExist.cs");
 
-    expect(result).toContain("File 'DoesNotExist.cs' not found");
-    expect(result).toContain("Available files:");
-    expect(result).toContain("Service.cs");
-    expect(result).toContain("Models/User.cs");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("File 'DoesNotExist.cs' not found");
+    expect(full.text).toContain("Available files:");
+    expect(full.text).toContain("Service.cs");
+    expect(full.text).toContain("Models/User.cs");
   });
 
   it("handles package with no files", async () => {
@@ -151,10 +157,11 @@ describe("invalid file path", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digFile(config, "EmptyLib", "Missing.cs");
+    const full = await digFile(config, "EmptyLib", "Missing.cs");
 
-    expect(result).toContain("File 'Missing.cs' not found");
-    expect(result).toContain("No files available");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("File 'Missing.cs' not found");
+    expect(full.text).toContain("No files available");
   });
 });
 
@@ -185,12 +192,13 @@ describe("path traversal protection", () => {
       const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
       const config = makeConfig([repo], tmpDir, cacheDir);
 
-      const result = await digFile(config, "MyLib", input);
+      const full = await digFile(config, "MyLib", input);
 
-      expect(result).toContain("Invalid file path");
+      expect(full.isError).toBe(true);
+      expect(full.text).toContain("Invalid file path");
       // Must not leak contents of a sibling package
-      expect(result).not.toContain("secret");
-      expect(result).not.toContain("namespace OtherPkg");
+      expect(full.text).not.toContain("secret");
+      expect(full.text).not.toContain("namespace OtherPkg");
     });
   }
 
@@ -205,7 +213,7 @@ describe("path traversal protection", () => {
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     // `sub/../Models/User.cs` → `Models/User.cs` after normalization
-    const result = await digFile(config, "MyLib", "sub/../Models/User.cs");
+    const { text: result } = await digFile(config, "MyLib", "sub/../Models/User.cs");
 
     expect(result).not.toContain("Invalid file path");
     expect(result).toContain("public class User");
@@ -228,10 +236,11 @@ describe("error handling", () => {
     );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digFile(config, "Missing", "Any.cs");
+    const full = await digFile(config, "Missing", "Any.cs");
 
-    expect(result).toContain("Missing");
-    expect(result).toContain("Source unavailable");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("Missing");
+    expect(full.text).toContain("Source unavailable");
   });
 });
 
@@ -249,10 +258,11 @@ describe("file size cap", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digFile(config, "MyLib", "Huge.cs");
+    const full = await digFile(config, "MyLib", "Huge.cs");
 
-    expect(result).toContain("File too large");
-    expect(result).toContain("1,100,000");
-    expect(result).not.toContain(largeContent);
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("File too large");
+    expect(full.text).toContain("1,100,000");
+    expect(full.text).not.toContain(largeContent);
   });
 });

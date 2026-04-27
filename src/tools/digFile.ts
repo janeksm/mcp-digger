@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { FILE_CHAR_LIMIT, PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS } from "./shared.js";
+import { FILE_CHAR_LIMIT, PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
 import { z } from "zod";
 import type { DiggerConfig } from "../config.js";
 import { findPackage, formatUnknownPackage } from "../config.js";
@@ -19,9 +19,6 @@ unless implementation detail of a specific file is needed.`;
 
 // ── Public API ──
 
-/**
- * Register the dig_file tool on an MCP server.
- */
 export function registerDigFile(
   server: McpServer,
   config: DiggerConfig,
@@ -37,37 +34,24 @@ export function registerDigFile(
       },
       annotations: TOOL_ANNOTATIONS,
     },
-    async ({ packageName, filePath }) => ({
-      content: [
-        { type: "text" as const, text: await digFile(config, packageName, filePath) },
-      ],
-    }),
+    async ({ packageName, filePath }) =>
+      toCallToolResult(await digFile(config, packageName, filePath)),
   );
 }
 
-/**
- * Read the full source of a single file from an internal package.
- *
- * 1. Look up the package by name.
- * 2. Ensure the repo is on disk via repoManager.
- * 3. Read the file directly from the repo via gitClient.readFile.
- * 4. On invalid path: list valid .cs files under the package directory.
- *
- * Never throws — returns a usable error message if the package is unknown,
- * the repo is unreachable, or the file path is invalid.
- */
+/** Never throws — returns a usable error message on every failure path. */
 export async function digFile(
   config: DiggerConfig,
   packageName: string,
   filePath: string,
-): Promise<string> {
+): Promise<ToolResult> {
   debug("digFile", "called for", packageName, filePath);
   const pkg = findPackage(config, packageName);
-  if (!pkg) return formatUnknownPackage(config, packageName);
+  if (!pkg) return toolError(formatUnknownPackage(config, packageName));
 
   const safeFilePath = normalizeFilePath(filePath);
   if (!safeFilePath) {
-    return `# ${packageName} — ${filePath}\n\nInvalid file path. Paths must be relative to the package root and cannot escape it (no absolute paths, '..' segments, backslashes, or null bytes).`;
+    return toolError(`# ${packageName} — ${filePath}\n\nInvalid file path. Paths must be relative to the package root and cannot escape it (no absolute paths, '..' segments, backslashes, or null bytes).`);
   }
 
   const repo = config.repos.find((r) => r.name === pkg.repoName)!;
@@ -79,21 +63,21 @@ export async function digFile(
     try {
       const content = await readFile(result.sourcePath, fullPath);
       if (content.length > FILE_CHAR_LIMIT) {
-        return `# ${packageName} — ${filePath}\n\nFile too large (${content.length.toLocaleString()} chars, limit ${FILE_CHAR_LIMIT.toLocaleString()}). Use dig_signatures for the public API, or view this file in your editor.`;
+        return toolError(`# ${packageName} — ${filePath}\n\nFile too large (${content.length.toLocaleString()} chars, limit ${FILE_CHAR_LIMIT.toLocaleString()}). Use dig_signatures for the public API, or view this file in your editor.`);
       }
-      return formatFile(packageName, filePath, content);
+      return toolSuccess(formatFile(packageName, filePath, content));
     } catch (err) {
       if (err instanceof GitError) {
         // File not found — list valid paths
         const validPaths = await listValidPaths(result.sourcePath, pkg.pathInRepo);
-        return formatInvalidPath(packageName, filePath, validPaths);
+        return toolError(formatInvalidPath(packageName, filePath, validPaths));
       }
       throw err;
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     error("digFile", `package '${packageName}' file '${filePath}':`, msg);
-    return `# ${packageName} — ${filePath}\n\nSource unavailable. ${msg}`;
+    return toolError(`# ${packageName} — ${filePath}\n\nSource unavailable. ${msg}`);
   }
 }
 

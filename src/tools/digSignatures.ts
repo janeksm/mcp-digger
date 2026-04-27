@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS } from "./shared.js";
+import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
 import {
   invalidate,
   isFresh,
@@ -26,9 +26,6 @@ To dig even deeper into a specific file's implementation, call dig_file.`;
 
 // ── Public API ──
 
-/**
- * Register the dig_signatures tool on an MCP server.
- */
 export function registerDigSignatures(
   server: McpServer,
   config: DiggerConfig,
@@ -41,32 +38,19 @@ export function registerDigSignatures(
       inputSchema: { packageName: PACKAGE_NAME_PARAM },
       annotations: TOOL_ANNOTATIONS,
     },
-    async ({ packageName }) => ({
-      content: [
-        { type: "text" as const, text: await digSignatures(config, packageName) },
-      ],
-    }),
+    async ({ packageName }) =>
+      toCallToolResult(await digSignatures(config, packageName)),
   );
 }
 
-/**
- * Generate stripped .cs signatures for a single package.
- *
- * 1. Look up the package and its repo.
- * 2. Ensure the repo is on disk and get the current commit hash.
- * 3. If the cache is stale, invalidate and regenerate all signatures.
- * 4. If the cache is fresh, return cached signatures.
- * 5. Format results as a readable markdown response.
- *
- * Never throws — returns a usable error message if the package is unknown or the repo is unreachable.
- */
+/** Never throws — returns a usable error message if the package is unknown or the repo is unreachable. */
 export async function digSignatures(
   config: DiggerConfig,
   packageName: string,
-): Promise<string> {
+): Promise<ToolResult> {
   debug("digSignatures", "called for", packageName);
   const pkg = findPackage(config, packageName);
-  if (!pkg) return formatUnknownPackage(config, packageName);
+  if (!pkg) return toolError(formatUnknownPackage(config, packageName));
 
   const repo = config.repos.find((r) => r.name === pkg.repoName)!;
 
@@ -101,21 +85,21 @@ export async function digSignatures(
     }
 
     if (signatures.length === 0) {
-      return `# ${packageName}\n\nNo .cs source files found.`;
+      return toolSuccess(`# ${packageName}\n\nNo .cs source files found.`);
     }
 
-    return formatSignatures(packageName, signatures);
+    return toolSuccess(formatSignatures(packageName, signatures));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     error("digSignatures", `package '${packageName}':`, msg);
     const stale = await readSignatures(pkg);
     if (stale.length > 0) {
-      return (
+      return toolSuccess(
         formatSignatures(packageName, stale) +
-        `\n\n---\n\n> **Warning:** Signatures may be stale. ${msg}`
+        `\n\n---\n\n> **Warning:** Signatures may be stale. ${msg}`,
       );
     }
-    return `# ${packageName}\n\nSource unavailable. ${msg}`;
+    return toolError(`# ${packageName}\n\nSource unavailable. ${msg}`);
   }
 }
 

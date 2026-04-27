@@ -54,8 +54,10 @@ describe("digSignatures", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digSignatures(config, "MyLib");
+    const full = await digSignatures(config, "MyLib");
+    const result = full.text;
 
+    expect(full.isError).toBe(false);
     expect(result).toContain("# MyLib — Signatures");
     expect(result).toContain("IService.cs");
     expect(result).toContain("```csharp");
@@ -76,7 +78,7 @@ describe("digSignatures", () => {
     await writeSignature(pkg, "Dummy.cs", "// cached signature content");
     await markFresh(cacheDir, "myrepo", await getHeadHash(repoDir));
 
-    const result = await digSignatures(config, "MyLib");
+    const { text: result } = await digSignatures(config, "MyLib");
 
     expect(result).toContain("cached signature content");
   });
@@ -105,7 +107,7 @@ describe("digSignatures", () => {
       "0000000000000000000000000000000000000000",
     );
 
-    const result = await digSignatures(config, "MyLib");
+    const { text: result } = await digSignatures(config, "MyLib");
 
     // Should have regenerated from actual repo
     expect(result).toContain("IFoo");
@@ -131,19 +133,21 @@ describe("unknown package", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digSignatures(config, "NonExistent");
+    const full = await digSignatures(config, "NonExistent");
 
-    expect(result).toContain("Unknown package 'NonExistent'");
-    expect(result).toContain("Alpha");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("Unknown package 'NonExistent'");
+    expect(full.text).toContain("Alpha");
   });
 
   it("returns message when no packages configured", async () => {
     const config = makeConfig([], tmpDir);
 
-    const result = await digSignatures(config, "Anything");
+    const full = await digSignatures(config, "Anything");
 
-    expect(result).toContain("Unknown package 'Anything'");
-    expect(result).toContain("No packages are configured");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("Unknown package 'Anything'");
+    expect(full.text).toContain("No packages are configured");
   });
 
   it("hints to run dig_overview when a wildcard repo is unresolved", async () => {
@@ -152,11 +156,12 @@ describe("unknown package", () => {
     const wildcard = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
     const config = makeConfig([wildcard], tmpDir, cacheDir);
 
-    const result = await digSignatures(config, "MyCompany.Core");
+    const full = await digSignatures(config, "MyCompany.Core");
 
-    expect(result).toContain("Unknown package 'MyCompany.Core'");
-    expect(result).toMatch(/wildcard repo.*'MyCompany\.\*'.*have not resolved/i);
-    expect(result).toContain("dig_overview");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("Unknown package 'MyCompany.Core'");
+    expect(full.text).toMatch(/wildcard repo.*'MyCompany\.\*'.*have not resolved/i);
+    expect(full.text).toContain("dig_overview");
   });
 });
 
@@ -176,10 +181,11 @@ describe("error handling", () => {
     );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digSignatures(config, "Missing");
+    const full = await digSignatures(config, "Missing");
 
-    expect(result).toContain("Missing");
-    expect(result).toContain("Source unavailable");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("Missing");
+    expect(full.text).toContain("Source unavailable");
   });
 
   it("returns stale cache when repo becomes unreachable", async () => {
@@ -199,11 +205,12 @@ describe("error handling", () => {
     );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digSignatures(config, "StaleLib");
+    const full = await digSignatures(config, "StaleLib");
 
-    expect(result).toContain("old but useful");
-    expect(result).toContain("Warning");
-    expect(result).toContain("stale");
+    expect(full.isError).toBe(false);
+    expect(full.text).toContain("old but useful");
+    expect(full.text).toContain("Warning");
+    expect(full.text).toContain("stale");
   });
 });
 
@@ -220,7 +227,7 @@ describe("empty package", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digSignatures(config, "EmptyLib");
+    const { text: result } = await digSignatures(config, "EmptyLib");
 
     expect(result).toContain("EmptyLib");
     expect(result).toContain("No .cs source files found");

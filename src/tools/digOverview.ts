@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { TOOL_ANNOTATIONS } from "./shared.js";
+import { TOOL_ANNOTATIONS, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
 import { z } from "zod";
 import {
   invalidate,
@@ -39,9 +39,8 @@ export function registerDigOverview(
       },
       annotations: TOOL_ANNOTATIONS,
     },
-    async ({ repoName }) => ({
-      content: [{ type: "text" as const, text: await digOverview(config, repoName) }],
-    }),
+    async ({ repoName }) =>
+      toCallToolResult(await digOverview(config, repoName)),
   );
 }
 
@@ -49,14 +48,15 @@ export function registerDigOverview(
 export async function digOverview(
   config: DiggerConfig,
   repoName: string,
-): Promise<string> {
+): Promise<ToolResult> {
   debug("digOverview", "called for repo", repoName);
 
   const repo = config.repos.find((r) => r.name === repoName);
-  if (!repo) return formatUnknownRepo(config, repoName);
+  if (!repo) return toolError(formatUnknownRepo(config, repoName));
 
   const sections: string[] = [];
   const warnings: string[] = [];
+  let hasContent: boolean;
 
   try {
     const result = await ensureReady(repo, config);
@@ -68,7 +68,7 @@ export async function digOverview(
       sections.push(
         `## ${repo.name}\n\n*${result.error.split("\n")[0]}*\n\n${result.error}`,
       );
-      await appendStaleFallback(sections, repo.packages, result.error);
+      hasContent = await appendStaleFallback(sections, repo.packages, result.error);
     } else {
       const fresh = await isFresh(
         config.cacheDir,
@@ -101,6 +101,7 @@ export async function digOverview(
         }),
       );
       sections.push(...overviews);
+      hasContent = true;
 
       if (!fresh) {
         await markFresh(config.cacheDir, repo.name, result.currentHash);
@@ -110,7 +111,7 @@ export async function digOverview(
     const msg = err instanceof Error ? err.message : String(err);
     error("digOverview", `repo '${repo.name}':`, msg);
     warnings.push(`Repo '${repo.name}': ${msg}`);
-    await appendStaleFallback(sections, repo.packages, msg);
+    hasContent = await appendStaleFallback(sections, repo.packages, msg);
   }
 
   if (warnings.length > 0) {
@@ -122,7 +123,8 @@ export async function digOverview(
   }
 
   const output = sections.join("\n\n").trimEnd();
-  return output || `No packages in repo '${repoName}'.`;
+  if (!output) return toolSuccess(`No packages in repo '${repoName}'.`);
+  return hasContent ? toolSuccess(output) : toolError(output);
 }
 
 // ── Internal ──
@@ -131,15 +133,18 @@ async function appendStaleFallback(
   sections: string[],
   packages: readonly PackageConfig[],
   errorMsg: string,
-): Promise<void> {
+): Promise<boolean> {
+  let foundStale = false;
   for (const pkg of packages) {
     const stale = await readOverview(pkg);
     if (stale) {
       sections.push(stale);
+      foundStale = true;
     } else {
       sections.push(
         `## ${pkg.name}\n\n*Source unavailable.* ${errorMsg}\n`,
       );
     }
   }
+  return foundStale;
 }

@@ -53,8 +53,10 @@ describe("digOverview", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digOverview(config, "myrepo");
+    const full = await digOverview(config, "myrepo");
+    const result = full.text;
 
+    expect(full.isError).toBe(false);
     expect(result).toContain("# MyLib");
     expect(result).toContain("IService");
     expect(result).toContain("Core service interface.");
@@ -75,7 +77,7 @@ describe("digOverview", () => {
     await writeOverview(pkg, cachedContent);
     await markFresh(cacheDir, "myrepo", await getHeadHash(repoDir));
 
-    const result = await digOverview(config, "myrepo");
+    const { text: result } = await digOverview(config, "myrepo");
 
     expect(result).toBe(cachedContent.trimEnd());
   });
@@ -98,7 +100,7 @@ describe("digOverview", () => {
     await writeOverview(pkg, "# MyLib\n\nStale content.\n");
     await markFresh(cacheDir, "myrepo", "0000000000000000000000000000000000000000");
 
-    const result = await digOverview(config, "myrepo");
+    const { text: result } = await digOverview(config, "myrepo");
 
     // Should have regenerated — contains interface from actual repo
     expect(result).toContain("IFoo");
@@ -125,7 +127,7 @@ describe("digOverview", () => {
     await markFresh(cacheDir, "myrepo", await getHeadHash(repoDir));
     await writeOverview(pkgA, "# PkgA\n\nCached A.\n");
 
-    const result = await digOverview(config, "myrepo");
+    const { text: result } = await digOverview(config, "myrepo");
 
     // PkgA should use cached content
     expect(result).toContain("Cached A.");
@@ -161,7 +163,7 @@ describe("repo scoping", () => {
     const repoB = makeLocalRepo("repo2", repo2Dir, [pkgB], tmpDir);
     const config = makeConfig([repoA, repoB], tmpDir, cacheDir);
 
-    const result = await digOverview(config, "repo1");
+    const { text: result } = await digOverview(config, "repo1");
 
     expect(result).toContain("# Alpha");
     expect(result).toContain("IAlpha");
@@ -177,10 +179,11 @@ describe("repo scoping", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digOverview(config, "nonexistent");
+    const full = await digOverview(config, "nonexistent");
 
-    expect(result).toContain("Unknown repo 'nonexistent'");
-    expect(result).toContain("myrepo");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("Unknown repo 'nonexistent'");
+    expect(full.text).toContain("myrepo");
   });
 });
 
@@ -200,11 +203,12 @@ describe("error handling", () => {
     );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digOverview(config, "norepo");
+    const full = await digOverview(config, "norepo");
 
-    expect(result).toContain("Missing");
-    expect(result).toContain("Source unavailable");
-    expect(result).toContain("Warnings");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("Missing");
+    expect(full.text).toContain("Source unavailable");
+    expect(full.text).toContain("Warnings");
   });
 
   it("returns stale cache when repo becomes unreachable", async () => {
@@ -224,13 +228,14 @@ describe("error handling", () => {
     );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digOverview(config, "gonerepo");
+    const full = await digOverview(config, "gonerepo");
 
+    expect(full.isError).toBe(false);
     // Should return stale cached content
-    expect(result).toContain("Old but useful content.");
+    expect(full.text).toContain("Old but useful content.");
     // Should also include a warning
-    expect(result).toContain("Warnings");
-    expect(result).toContain("gonerepo");
+    expect(full.text).toContain("Warnings");
+    expect(full.text).toContain("gonerepo");
   });
 
   it("handles unavailable repo with no stale cache", async () => {
@@ -247,19 +252,21 @@ describe("error handling", () => {
     );
     const config = makeConfig([badRepo], tmpDir, cacheDir);
 
-    const result = await digOverview(config, "bad");
+    const full = await digOverview(config, "bad");
 
-    expect(result).toContain("BadLib");
-    expect(result).toContain("Source unavailable");
-    expect(result).toContain("Warnings");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("BadLib");
+    expect(full.text).toContain("Source unavailable");
+    expect(full.text).toContain("Warnings");
   });
 
   it("returns unknown repo message when repo does not exist", async () => {
     const config = makeConfig([], tmpDir);
 
-    const result = await digOverview(config, "myrepo");
+    const full = await digOverview(config, "myrepo");
 
-    expect(result).toContain("Unknown repo");
+    expect(full.isError).toBe(true);
+    expect(full.text).toContain("Unknown repo");
   });
 });
 
@@ -278,7 +285,7 @@ describe("wildcard repo errors", () => {
     const repo = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digOverview(config, "MyCompany.*");
+    const { text: result } = await digOverview(config, "MyCompany.*");
 
     expect(result).toContain("matched zero packages");
     expect(result).toContain("explicit 'packages' list");
@@ -299,7 +306,7 @@ describe("warnings", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const result = await digOverview(config, "myrepo");
+    const { text: result } = await digOverview(config, "myrepo");
 
     expect(result).not.toContain("Warnings");
   });

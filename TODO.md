@@ -39,7 +39,7 @@
 | 4 | Validate package names against safe charset (SEC #4) | High | done | aadb842 | `src/config.ts` |
 | 5 | Restrict repo URL schemes to `https:`/`ssh:` (SEC #5) | High | done | 8517ee0 | `src/config.ts` |
 | 6 | Cap dig_file + scope dig_overview to single repo + new dig_list tool (SEC #3) | High | done | 9dc7f95 | `src/tools/digFile.ts`, `src/tools/digOverview.ts`, `src/tools/digList.ts`, `src/tools/shared.ts`, `src/index.ts` |
-| 7 | Return `isError: true` on error responses | High | — | MCP `CallToolResult` supports `isError` boolean. Currently all tools return errors as normal text. Without the flag Claude can't distinguish errors from successful-but-empty results. | `src/tools/digFile.ts`, `src/tools/digSignatures.ts`, `src/tools/digOverview.ts` |
+| 7 | Return `isError: true` on error responses | High | done | 2b5a8bd | `src/tools/digFile.ts`, `src/tools/digSignatures.ts`, `src/tools/digOverview.ts`, `src/tools/shared.ts` |
 | 8 | Atomic `meta.json` writes + per-repo mutex (SEC #6, #10) | High | — | Non-atomic writes corrupt cache on crash. Concurrent tool calls interleave invalidate-regenerate. Write to `.tmp` then rename; promise-map mutex keyed by `repo.name`. | `src/cacheManager.ts`, `src/repoManager.ts` |
 | 9 | Prototype-pollution hardening on `JSON.parse` (SEC #7) | Medium | — | `JSON.parse(raw) as T` trusts shape. Construct fresh objects with only known fields. Low practical impact but cheap defense-in-depth. | `src/config.ts`, `src/cacheManager.ts` |
 | 10 | Cap fan-out in `discoverPackages` (SEC #8) | Medium | — | Unbounded `Promise.all` over all candidate dirs. `.slice(0, MAX)` or concurrency limiter. Log warning if cap hit. | `src/config.ts` |
