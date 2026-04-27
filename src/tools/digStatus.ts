@@ -199,14 +199,14 @@ function formatDiscovery(repo: RepoConfig, scan: ScanResult | null): string[] {
         `- **Referenced matching prefix:** ${matchingRefs.length}${matchingRefs.length > 0 ? ` (${matchingRefs.join(", ")})` : ""}`,
       );
     } else {
-      lines.push(`- **Referenced matching prefix:** unavailable — run dig_overview to trigger a scan`);
+      lines.push(`- **Referenced matching prefix:** unavailable — run dig_list to trigger a scan`);
     }
     if (repo.packages.length > 0) {
       const names = repo.packages.map((p) => p.name).join(", ");
       lines.push(`- **Matched packages:** ${repo.packages.length} (${names})`);
     } else {
       lines.push(
-        `- **Matched packages:** not yet resolved — run dig_overview to clone the repo and compute the intersection`,
+        `- **Matched packages:** not yet resolved — run dig_list to clone the repo and compute the intersection`,
       );
     }
   } else {

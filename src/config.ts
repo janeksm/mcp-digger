@@ -661,7 +661,7 @@ export function formatUnknownPackage(
     lines.push("");
     lines.push(
       `Note: wildcard repo(s) ${names} have not resolved any packages. ` +
-        `Call dig_overview to trigger a workspace scan and repo clone — ` +
+        `Call dig_list to trigger a workspace scan and repo clone — ` +
         `this usually populates the package list. ` +
         `If the scan still produces no match, add an explicit 'packages' list in ${config.configPath}.`,
     );

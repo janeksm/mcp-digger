@@ -109,7 +109,7 @@ describe("unknown package", () => {
     expect(full.text).toContain("No packages are configured");
   });
 
-  it("hints to run dig_overview when a wildcard repo is unresolved", async () => {
+  it("hints to run dig_list when a wildcard repo is unresolved", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, { "readme.md": "hi" });
     const wildcard = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
@@ -120,7 +120,7 @@ describe("unknown package", () => {
     expect(full.isError).toBe(true);
     expect(full.text).toContain("Unknown package 'MyCompany.Core'");
     expect(full.text).toMatch(/wildcard repo.*'MyCompany\.\*'.*have not resolved/i);
-    expect(full.text).toContain("dig_overview");
+    expect(full.text).toContain("dig_list");
   });
 });
 

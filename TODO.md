@@ -45,3 +45,4 @@
 | 10 | Cap fan-out in `discoverPackages` (SEC #8) | Medium | — | Unbounded `Promise.all` over all candidate dirs. `.slice(0, MAX)` or concurrency limiter. Log warning if cap hit. | `src/config.ts` |
 | 11 | Close SEC #9 — log-file size cap already exists | Done | done | Verified: `MAX_LOG_SIZE = 5 * 1024 * 1024` at `logger.ts:12`, truncation at lines 58-63. Update TODO.SEC.md. | `TODO.SEC.md` |
 | 12 | Low/info items: defensive filePath in readFile, skip symlinks, confirm SDK Zod enforcement (SEC #11, #12, #13) | Low | — | Belt-and-braces path validation in `gitClient.readFile`; `lstat` to skip symlinks in `discoverPackages`; manual test to confirm SDK validates Zod schemas pre-handler. | `src/gitClient.ts`, `src/config.ts` |
+| 13 | Fix stale `dig_overview` references → `dig_list` in user-facing messages | Low | done | 69e51a1 | `src/tools/digStatus.ts`, `src/config.ts` |
