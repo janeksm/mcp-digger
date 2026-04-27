@@ -493,10 +493,10 @@ describe("loadConfig — fatal errors", () => {
     expect(() => loadConfig(env, cwd)).toThrow(/invalid characters/);
   });
 
-  it("throws on wildcard repo name with invalid prefix", () => {
+  it("throws on packageFilter with invalid prefix characters", () => {
     const config: ConfigFile = {
       repos: [
-        { name: "my repo.*", url: "https://a.git" },
+        { name: "Libs", url: "https://a.git", packageFilter: "my repo.*" },
       ],
     };
     const { env, cwd } = setupConfig(config);
@@ -931,15 +931,16 @@ describe("findRepo", () => {
   });
 });
 
-// ── Wildcard repo names ──
+// ── packageFilter ──
 
-describe("loadConfig — wildcard repo names", () => {
-  it("name 'MyCompany.*' → discoveryMode 'wildcard', namePrefix 'MyCompany.', slug-based managedSourcePath", () => {
+describe("loadConfig — packageFilter", () => {
+  it("packageFilter 'MyCompany.*' → discoveryMode 'wildcard', managedSourcePath uses repo name", () => {
     const config: ConfigFile = {
       repos: [
         {
-          name: "MyCompany.*",
+          name: "MyCompany.Libs",
           url: "https://gitlab.company.com/shared/libs.git",
+          packageFilter: "MyCompany.*",
         },
       ],
     };
@@ -947,57 +948,71 @@ describe("loadConfig — wildcard repo names", () => {
     const cfg = loadConfig(env, cwd);
 
     expect(cfg.repos[0]!.discoveryMode).toBe("wildcard");
-    expect(cfg.repos[0]!.namePrefix).toBe("MyCompany.");
+    expect(cfg.repos[0]!.packageFilter).toBe("MyCompany.*");
     expect(cfg.repos[0]!.packages).toEqual([]);
     expect(cfg.repos[0]!.managedSourcePath).toBe(
-      path.join(cwd, ".digger/source", "MyCompany"),
+      path.join(cwd, ".digger/source", "MyCompany.Libs"),
     );
   });
 
-  it("name 'MyCompany*' (no dot) → prefix 'MyCompany', slug 'MyCompany'", () => {
+  it("rejects '*' in repo name (must use packageFilter instead)", () => {
     const config: ConfigFile = {
-      repos: [{ name: "MyCompany*", url: "https://g.com/x.git" }],
-    };
-    const { env, cwd } = setupConfig(config);
-    const cfg = loadConfig(env, cwd);
-
-    expect(cfg.repos[0]!.namePrefix).toBe("MyCompany");
-    expect(cfg.repos[0]!.managedSourcePath).toBe(
-      path.join(cwd, ".digger/source", "MyCompany"),
-    );
-  });
-
-  it("rejects wildcard in non-trailing position", () => {
-    const config: ConfigFile = {
-      repos: [{ name: "MyCom*any", url: "https://g.com/x.git" }],
+      repos: [{ name: "MyCompany.*", url: "https://g.com/x.git" }],
     };
     const { env, cwd } = setupConfig(config);
     expect(() => loadConfig(env, cwd)).toThrow(
-      /wildcard.*trailing/i,
+      /name must not contain '\*'.*packageFilter/i,
     );
   });
 
-  it("rejects name '*' (empty slug after strip)", () => {
+  it("rejects packageFilter without trailing '*'", () => {
     const config: ConfigFile = {
-      repos: [{ name: "*", url: "https://g.com/x.git" }],
+      repos: [{ name: "Libs", url: "https://g.com/x.git", packageFilter: "MyCompany." }],
     };
     const { env, cwd } = setupConfig(config);
-    expect(() => loadConfig(env, cwd)).toThrow(/empty directory slug/i);
+    expect(() => loadConfig(env, cwd)).toThrow(
+      /packageFilter.*must end with '\*'/i,
+    );
   });
 
-  it("rejects wildcard repo with explicit 'packages' list", () => {
+  it("rejects packageFilter '*' (too broad)", () => {
+    const config: ConfigFile = {
+      repos: [{ name: "Libs", url: "https://g.com/x.git", packageFilter: "*" }],
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(/too broad/i);
+  });
+
+  it("rejects packageFilter '.*' (too broad after stripping)", () => {
+    const config: ConfigFile = {
+      repos: [{ name: "Libs", url: "https://g.com/x.git", packageFilter: ".*" }],
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(/too broad/i);
+  });
+
+  it("rejects packageFilter with invalid characters", () => {
+    const config: ConfigFile = {
+      repos: [{ name: "Libs", url: "https://g.com/x.git", packageFilter: "My Company.*" }],
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(/invalid characters/i);
+  });
+
+  it("rejects packageFilter combined with explicit packages", () => {
     const config: ConfigFile = {
       repos: [
         {
-          name: "MyCompany.*",
+          name: "Libs",
           url: "https://g.com/x.git",
+          packageFilter: "MyCompany.*",
           packages: ["MyCompany.Core"],
         },
       ],
     };
     const { env, cwd } = setupConfig(config);
     expect(() => loadConfig(env, cwd)).toThrow(
-      /wildcard repos cannot have an explicit 'packages' list/i,
+      /'packageFilter' and 'packages' are mutually exclusive/i,
     );
   });
 });

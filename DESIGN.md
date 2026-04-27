@@ -22,7 +22,7 @@
 
 **Purpose:** Validates config and tests git connectivity for all configured repos. Call first to diagnose setup issues before digging.
 
-**Output:** Markdown report with config summary (auth strategy, PAT status, repo count, warnings), workspace-scan summary (when any repo uses wildcard mode — `.sln`/`.slnx`/`Directory.*.props`/`Directory.*.targets` counts, total referenced packages, cache file path), and per-repo checks (discovery mode with wildcard prefix + matching references, local path validation, remote connectivity via `git ls-remote`). Rich error context on failure: auth attempts made, exact error, actionable hints.
+**Output:** Markdown report with config summary (auth strategy, PAT status, repo count, warnings), workspace-scan summary (when any repo uses `packageFilter` — `.sln`/`.slnx`/`Directory.*.props`/`Directory.*.targets` counts, total referenced packages, cache file path), and per-repo checks (discovery mode with filter + matching references, local path validation, remote connectivity via `git ls-remote`). Rich error context on failure: auth attempts made, exact error, actionable hints.
 
 ### `dig_list` — Discovery: Available Repos & Packages
 
@@ -34,7 +34,7 @@
 
 **Purpose:** Lists all configured repositories and their resolved package names. Call first to discover what's available before digging into any specific repo or package.
 
-**Output:** Markdown listing of repos with their package names. Wildcard repos show `(wildcard)` suffix. Warns if repo resolution was incomplete.
+**Output:** Markdown listing of repos with their package names. Warns if repo resolution was incomplete.
 
 ### `dig_overview` — Level 1: Package Overview
 
@@ -91,4 +91,4 @@ Each tool's description guides Claude on when to escalate to the next level.
 - **Config-driven.** Tools receive resolved `DiggerConfig` at registration time. They never read env vars directly.
 - **Cache-aware.** Overview and signatures tools use commit-hash-based cache invalidation. File tool reads directly from git.
 - **Sequential repo processing.** Tools process repos sequentially to avoid concurrent git operations competing for network/disk.
-- **Wildcard repos.** A trailing `*` in a repo `name` (e.g. `"MyCompany.*"`) narrows the exposed package list to the intersection of (workspace-referenced ∩ name prefix ∩ on-disk `.csproj` directories). References are collected by a recursive workspace scan over `.sln`, `.slnx`, `Directory.Packages.props`, `Directory.Build.props`, and `Directory.Build.targets` files, skipping `.git`/`.digger`/`node_modules`/`bin`/`obj`/`.vs`/`.idea`/`packages`. The scan runs once per `ensureAllReady()` call and writes its full result to `<cacheDir>/solution-scan.json`. When a wildcard repo resolves to zero packages, the per-repo `error` is surfaced by each tool with a recommendation to switch to an explicit `packages` list.
+- **Package filtering.** A `packageFilter` field on a repo (e.g. `"packageFilter": "BSF.*"`) narrows the exposed package list to the intersection of (workspace-referenced packages matching the filter prefix ∩ on-disk `.csproj` directories). The repo `name` is a plain identifier (e.g. `"BSF.NuGet"`); `packages` (explicit list) and `packageFilter` are mutually exclusive. References are collected by a recursive workspace scan over `.sln`, `.slnx`, `Directory.Packages.props`, `Directory.Build.props`, and `Directory.Build.targets` files, skipping `.git`/`.digger`/`node_modules`/`bin`/`obj`/`.vs`/`.idea`/`packages`. The scan runs once per `ensureAllReady()` call and writes its full result to `<cacheDir>/solution-scan.json`. When a filtered repo resolves to zero packages, the per-repo `error` is surfaced by each tool with a recommendation to switch to an explicit `packages` list.

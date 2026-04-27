@@ -45,9 +45,7 @@ export async function digList(config: DiggerConfig): Promise<string> {
   const sections: string[] = ["# Available Packages"];
 
   for (const repo of config.repos) {
-    const header = repo.discoveryMode === "wildcard"
-      ? `## ${repo.name} (wildcard)`
-      : `## ${repo.name}`;
+    const header = `## ${repo.name}`;
 
     if (repo.packages.length === 0) {
       sections.push(`${header}\n\n*No packages resolved.*`);

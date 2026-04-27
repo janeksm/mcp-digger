@@ -38,7 +38,7 @@ const createBareRepo = (files: Record<string, string>) => createBareRepoHelper(t
 const makeConfig = (repos: RepoConfig[]) => makeConfigHelper(repos, tmpDir);
 const makeRepoConfig = (overrides: Partial<RepoConfig> & { name: string }) =>
   makeRepoConfigHelper(overrides, tmpDir);
-const makeWildcardRepo = (name: string, overrides: Partial<RepoConfig> = {}) =>
+const makeWildcardRepo = (name: string, overrides: Partial<RepoConfig> & { packageFilter: string }) =>
   makeWildcardRepoHelper(name, tmpDir, overrides);
 
 // ── Mode B (local path) ──
@@ -281,11 +281,11 @@ describe("ensureReady — wildcard mode", () => {
     ]);
     writeSlnFile(tmpDir, "Sample.sln", ["App/App.csproj"]);
 
-    const repo = makeWildcardRepo("MyCompany.*", { localPath: localRepo });
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
     const config = makeConfig([repo]);
 
     const results = await ensureAllReady(config);
-    const result = results.get("MyCompany.*")!;
+    const result = results.get("MyCompany.Libs")!;
 
     expect(result.error).toBeUndefined();
     const names = repo.packages.map((p) => p.name).sort();
@@ -299,7 +299,7 @@ describe("ensureReady — wildcard mode", () => {
     writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["MyCompany.Core"]);
     writeSlnxFile(tmpDir, "Modern.slnx", ["App/App.csproj"]);
 
-    const repo = makeWildcardRepo("MyCompany.*", { localPath: localRepo });
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
     const config = makeConfig([repo]);
 
     await ensureAllReady(config);
@@ -313,7 +313,7 @@ describe("ensureReady — wildcard mode", () => {
     });
     writeDirectoryPackagesProps(tmpDir, ["MyCompany.Core"]);
 
-    const repo = makeWildcardRepo("MyCompany.*", { localPath: localRepo });
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
     const config = makeConfig([repo]);
 
     await ensureAllReady(config);
@@ -329,11 +329,11 @@ describe("ensureReady — wildcard mode", () => {
     writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["Newtonsoft.Json"]);
     writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
 
-    const repo = makeWildcardRepo("MyCompany.*", { localPath: localRepo });
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
     const config = makeConfig([repo]);
 
     const results = await ensureAllReady(config);
-    const result = results.get("MyCompany.*")!;
+    const result = results.get("MyCompany.Libs")!;
 
     expect(result.error).toBeDefined();
     expect(result.error).toMatch(/matched zero packages/);
@@ -350,7 +350,7 @@ describe("ensureReady — wildcard mode", () => {
     });
 
     // No solutions → wildcard matches nothing
-    const wildcard = makeWildcardRepo("MyCompany.*", { localPath: wildcardRepo });
+    const wildcard = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: wildcardRepo });
     const explicit = makeRepoConfig({
       name: "explicit",
       localPath: explicitRepo,
@@ -367,7 +367,7 @@ describe("ensureReady — wildcard mode", () => {
 
     const results = await ensureAllReady(config);
 
-    expect(results.get("MyCompany.*")!.error).toBeDefined();
+    expect(results.get("MyCompany.Libs")!.error).toBeDefined();
     expect(results.get("explicit")!.error).toBeUndefined();
     expect(explicit.packages).toHaveLength(1);
   });
@@ -379,7 +379,7 @@ describe("ensureReady — wildcard mode", () => {
     writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["MyCompany.Core"]);
     writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
 
-    const repo = makeWildcardRepo("MyCompany.*", { localPath: localRepo });
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
     const config = makeConfig([repo]);
 
     await ensureAllReady(config);

@@ -153,14 +153,14 @@ describe("unknown package", () => {
   it("hints to run dig_list when a wildcard repo is unresolved", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, { "readme.md": "hi" });
-    const wildcard = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
+    const wildcard = makeWildcardRepo("MyCompany.Libs", tmpDir, { packageFilter: "MyCompany.*", localPath: repoDir });
     const config = makeConfig([wildcard], tmpDir, cacheDir);
 
     const full = await digSignatures(config, "MyCompany.Core");
 
     expect(full.isError).toBe(true);
     expect(full.text).toContain("Unknown package 'MyCompany.Core'");
-    expect(full.text).toMatch(/wildcard repo.*'MyCompany\.\*'.*have not resolved/i);
+    expect(full.text).toMatch(/filtered repo.*'MyCompany\.Libs'.*have not resolved/i);
     expect(full.text).toContain("dig_list");
   });
 });

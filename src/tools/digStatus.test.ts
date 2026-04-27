@@ -201,7 +201,7 @@ describe("wildcard repo rendering", () => {
     ]);
     writeSlnFile(tmpDir, "Sample.sln", ["App/App.csproj"]);
 
-    const repo = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
+    const repo = makeWildcardRepo("MyCompany.Libs", tmpDir, { packageFilter: "MyCompany.*", localPath: repoDir });
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digStatus(config);
@@ -209,7 +209,7 @@ describe("wildcard repo rendering", () => {
     expect(result).toContain("## Workspace scan");
     expect(result).toContain("Solution files:** 1");
     expect(result).toContain("Total referenced packages:** 2");
-    expect(result).toContain('Discovery:** wildcard (prefix "MyCompany.")');
+    expect(result).toContain('Discovery:** wildcard (filter "MyCompany.*")');
     expect(result).toContain("Referenced matching prefix:** 1");
     expect(result).toContain("MyCompany.Core");
   });
@@ -220,12 +220,12 @@ describe("wildcard repo rendering", () => {
       "src/MyCompany.Core/A.cs": "namespace Core;",
     });
     // No solution files — scan produces an empty set, but it still runs.
-    const repo = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
+    const repo = makeWildcardRepo("MyCompany.Libs", tmpDir, { packageFilter: "MyCompany.*", localPath: repoDir });
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digStatus(config);
 
-    expect(result).toContain('Discovery:** wildcard (prefix "MyCompany.")');
+    expect(result).toContain('Discovery:** wildcard (filter "MyCompany.*")');
     expect(result).toContain("Matched packages:** not yet resolved");
   });
 });

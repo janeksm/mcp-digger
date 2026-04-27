@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import type { DiggerConfig, PackageConfig, RepoConfig } from "./config.js";
-import { discoverPackages } from "./config.js";
+import { discoverPackages, filterPrefix } from "./config.js";
 import * as gitClient from "./gitClient.js";
 import { debug } from "./logger.js";
 import { withRepoLock } from "./repoLock.js";
@@ -43,7 +43,7 @@ export interface RepoReadyResult {
  * is on disk and mutates `repoConfig.packages` in place.
  *
  * For repos with `discoveryMode === "wildcard"`, intersects on-disk candidates with
- * workspace-scanned package references filtered by `namePrefix`. If the scan has
+ * workspace-scanned package references filtered by `packageFilter`. If the scan has
  * not been provided (solo `ensureReady` call), it is performed inline for the
  * current workspace.
  */
@@ -195,8 +195,7 @@ function applyWildcardMatch(
   config: DiggerConfig,
   candidates: PackageConfig[],
 ): void {
-  // namePrefix is always set when discoveryMode === "wildcard" (loadConfig).
-  const prefix = repoConfig.namePrefix!;
+  const prefix = filterPrefix(repoConfig.packageFilter!);
   const referenced = new Set(scan.packages);
 
   const matched = candidates.filter(
@@ -228,10 +227,9 @@ function buildWildcardEmptyError(
   candidateCount: number,
   config: DiggerConfig,
 ): string {
-  const prefix = repoConfig.namePrefix!;
   const cachePath = scanCachePath(config.cacheDir);
   return (
-    `Wildcard repo '${repoConfig.name}' (prefix '${prefix}') matched zero packages.\n` +
+    `Repo '${repoConfig.name}' (packageFilter '${repoConfig.packageFilter}') matched zero packages.\n` +
     `Workspace scan found ${scan.packages.length} referenced package(s) ` +
     `across ${scan.solutionFiles.length} solution file(s), ` +
     `${scan.directoryPackagesProps.length} Directory.Packages.props, ` +

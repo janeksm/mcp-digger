@@ -237,28 +237,26 @@ export function writeDirectoryBuildTargets(
 }
 
 /**
- * Build a wildcard RepoConfig for tests. The returned config has
- * `discoveryMode: "wildcard"`, `namePrefix` derived from the name, and
- * an empty `packages` list (to be populated by `ensureReady`).
+ * Build a filtered (wildcard) RepoConfig for tests. The returned config has
+ * `discoveryMode: "wildcard"` and an empty `packages` list (populated by `ensureReady`).
  */
 export function makeWildcardRepo(
   name: string,
   tmpDir: string,
-  overrides: Partial<RepoConfig> = {},
+  overrides: Partial<RepoConfig> & { packageFilter: string },
 ): RepoConfig {
-  if (!name.endsWith("*")) {
-    throw new Error("makeWildcardRepo: name must end with '*'");
+  if (!overrides.packageFilter.endsWith("*")) {
+    throw new Error("makeWildcardRepo: packageFilter must end with '*'");
   }
-  const namePrefix = name.slice(0, -1);
-  const slug = namePrefix.replace(/\.+$/, "") || name;
+  const { packageFilter, ...rest } = overrides;
   return {
     name,
-    namePrefix,
-    managedSourcePath: path.join(tmpDir, "source", slug),
+    packageFilter,
+    managedSourcePath: path.join(tmpDir, "source", name),
     sourceRoot: "src",
     discoveryMode: "wildcard",
     packages: [],
     auth: { strategy: "none" },
-    ...overrides,
+    ...rest,
   };
 }

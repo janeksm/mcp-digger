@@ -74,12 +74,12 @@ describe("digList", () => {
     writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["MyCompany.Core"]);
     writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
 
-    const repo = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
+    const repo = makeWildcardRepo("MyCompany.Libs", tmpDir, { packageFilter: "MyCompany.*", localPath: repoDir });
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digList(config);
 
-    expect(result).toContain("(wildcard)");
+    expect(result).toContain("## MyCompany.Libs");
     expect(result).toContain("- MyCompany.Core");
   });
 
@@ -92,7 +92,7 @@ describe("digList", () => {
     writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["Newtonsoft.Json"]);
     writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
 
-    const repo = makeWildcardRepo("MyCompany.*", tmpDir, { localPath: repoDir });
+    const repo = makeWildcardRepo("MyCompany.Libs", tmpDir, { packageFilter: "MyCompany.*", localPath: repoDir });
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digList(config);

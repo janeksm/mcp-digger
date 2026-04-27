@@ -142,8 +142,12 @@ export async function readSignatures(
 
 // ── Internal ──
 
+function safeRepoSlug(repoName: string): string {
+  return repoName.replace(/\*+$/, "").replace(/\.+$/, "");
+}
+
 function metaFilePath(cacheDir: string, repoName: string): string {
-  return path.join(cacheDir, "meta", `${repoName}.json`);
+  return path.join(cacheDir, "meta", `${safeRepoSlug(repoName)}.json`);
 }
 
 async function readMeta(cacheDir: string, repoName: string): Promise<RepoMeta | undefined> {

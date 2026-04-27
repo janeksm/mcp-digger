@@ -22,6 +22,7 @@ export interface RepoDefinition {
   url?: string;
   sourceRoot?: string; // default "src"
   packages?: string[]; // if omitted → auto-discover at runtime
+  packageFilter?: string; // e.g. "BSF.*" — mutually exclusive with packages
   auth?: AuthFile;
 }
 
@@ -46,14 +47,14 @@ export interface RepoConfig {
   /**
    * - `"explicit"`: packages listed in config file.
    * - `"auto"`: scan repo on disk for every non-test `.csproj` dir.
-   * - `"wildcard"`: trailing-`*` repo name; intersect (solution-referenced ∩ `namePrefix` ∩ on-disk candidates).
+   * - `"wildcard"`: driven by `packageFilter` field; intersect (solution-referenced ∩ filter prefix ∩ on-disk candidates).
    */
   discoveryMode: "explicit" | "auto" | "wildcard";
   /**
-   * Only populated for wildcard repos. The repo name with the trailing `*`
-   * stripped — matched against package names via `startsWith`.
+   * Only set when `packageFilter` is present in config. The raw glob value,
+   * e.g. `"BSF.*"`. Prefix is derived at point of use via `.slice(0, -1)`.
    */
-  namePrefix?: string;
+  packageFilter?: string;
   /** Populated immediately for explicit, lazily (by discoverPackages / wildcard) for auto and wildcard. */
   packages: PackageConfig[];
   /** Resolved git auth for this repo. Never undefined — defaults to `{ strategy: "auto" }`. */
@@ -127,6 +128,10 @@ const SAFE_NAME_HINT = "Names must match /^[A-Za-z0-9._-]+$/.";
 export function isValidPackageName(name: string): boolean {
   if (name === "." || name === "..") return false;
   return SAFE_NAME_RE.test(name);
+}
+
+export function filterPrefix(packageFilter: string): string {
+  return packageFilter.slice(0, -1);
 }
 
 const SSH_SHORTHAND_RE = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:.+$/;
@@ -418,42 +423,47 @@ export function loadConfig(
     const hasExplicitPackages =
       Array.isArray(repoDef.packages) && repoDef.packages.length > 0;
 
-    // Wildcard: only allowed as a trailing character
-    const isWildcard = name.endsWith("*");
-    if (name.includes("*") && !isWildcard) {
+    if (name.includes("*")) {
       errors.push(
-        `Repo '${name}': wildcard '*' is only allowed as a trailing character in the repo name.`,
+        `Repo '${name}': name must not contain '*'. Use the 'packageFilter' field for wildcard package matching.`,
       );
       continue;
     }
-
-    const nameBase = isWildcard ? name.slice(0, -1) : name;
-    if (nameBase && !isValidPackageName(nameBase)) {
+    if (!isValidPackageName(name)) {
       errors.push(
         `Repo '${name}': name contains invalid characters. ${SAFE_NAME_HINT}`,
       );
       continue;
     }
 
-    let namePrefix: string | undefined;
-    let slug: string;
-    if (isWildcard) {
-      namePrefix = name.slice(0, -1);
-      slug = namePrefix.replace(/\.+$/, "");
-      if (!slug) {
+    const packageFilter = repoDef.packageFilter?.trim() || undefined;
+    if (packageFilter) {
+      if (!packageFilter.endsWith("*")) {
         errors.push(
-          `Repo '${name}': name collapses to an empty directory slug after stripping wildcard — use a prefix like 'MyCompany.*'.`,
+          `Repo '${name}': packageFilter '${packageFilter}' must end with '*'.`,
+        );
+        continue;
+      }
+      const filterBase = filterPrefix(packageFilter);
+      const filterClean = filterBase.replace(/\.+$/, "");
+      if (!filterClean) {
+        errors.push(
+          `Repo '${name}': packageFilter '${packageFilter}' is too broad — use a prefix like 'MyCompany.*'.`,
+        );
+        continue;
+      }
+      if (!isValidPackageName(filterClean)) {
+        errors.push(
+          `Repo '${name}': packageFilter '${packageFilter}' contains invalid characters. ${SAFE_NAME_HINT}`,
         );
         continue;
       }
       if (hasExplicitPackages) {
         errors.push(
-          `Repo '${name}': wildcard repos cannot have an explicit 'packages' list — packages are derived from the workspace's .sln / .slnx / props / targets.`,
+          `Repo '${name}': 'packageFilter' and 'packages' are mutually exclusive — packages are derived from the workspace's .sln / .slnx / props / targets when packageFilter is set.`,
         );
         continue;
       }
-    } else {
-      slug = name;
     }
 
     const url = repoDef.url?.trim() || undefined;
@@ -474,7 +484,7 @@ export function loadConfig(
     localRepos.delete(name);
 
     const sourceRoot = repoDef.sourceRoot?.trim() || DEFAULT_SOURCE_ROOT;
-    const discoveryMode: "explicit" | "auto" | "wildcard" = isWildcard
+    const discoveryMode: "explicit" | "auto" | "wildcard" = packageFilter
       ? "wildcard"
       : hasExplicitPackages
         ? "explicit"
@@ -513,10 +523,10 @@ export function loadConfig(
       name,
       url,
       localPath,
-      managedSourcePath: path.join(managedSourceDir, slug),
+      managedSourcePath: path.join(managedSourceDir, name),
       sourceRoot,
       discoveryMode,
-      namePrefix,
+      packageFilter,
       packages,
       auth,
     });
@@ -657,10 +667,10 @@ export function formatUnknownPackage(
   }
 
   if (unresolvedWildcards.length > 0) {
-    const names = unresolvedWildcards.map((r) => `'${r.name}'`).join(", ");
+    const names = unresolvedWildcards.map((r) => `'${r.name}' (packageFilter: ${r.packageFilter})`).join(", ");
     lines.push("");
     lines.push(
-      `Note: wildcard repo(s) ${names} have not resolved any packages. ` +
+      `Note: filtered repo(s) ${names} have not resolved any packages. ` +
         `Call dig_list to trigger a workspace scan and repo clone — ` +
         `this usually populates the package list. ` +
         `If the scan still produces no match, add an explicit 'packages' list in ${config.configPath}.`,

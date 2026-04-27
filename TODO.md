@@ -43,6 +43,7 @@
 | 8 | Atomic `meta.json` writes + per-repo mutex (SEC #6, #10) | High | done | 1747ebf | `src/cacheManager.ts`, `src/repoManager.ts`, `src/repoLock.ts`, `src/tools/digOverview.ts`, `src/tools/digSignatures.ts`, `src/tools/digFile.ts` |
 | 11 | Close SEC #9 — log-file size cap already exists | Done | done | Verified: `MAX_LOG_SIZE = 5 * 1024 * 1024` at `logger.ts:12`, truncation at lines 58-63. Update TODO.SEC.md. | `TODO.SEC.md` |
 | 13 | Fix stale `dig_overview` references → `dig_list` in user-facing messages | Low | done | 69e51a1 | `src/tools/digStatus.ts`, `src/config.ts` |
+| 14 | Replace wildcard repo names with `packageFilter` field | High | done | 1bc6246 | `src/config.ts`, `src/repoManager.ts`, `src/cacheManager.ts`, `src/tools/*`, `DESIGN.md` |
 | 9 | Prototype-pollution hardening on `JSON.parse` (SEC #7) | Medium | — | `JSON.parse(raw) as T` trusts shape. Construct fresh objects with only known fields. Low practical impact but cheap defense-in-depth. | `src/config.ts`, `src/cacheManager.ts` |
 | 10 | Cap fan-out in `discoverPackages` (SEC #8) | Medium | — | Unbounded `Promise.all` over all candidate dirs. `.slice(0, MAX)` or concurrency limiter. Log warning if cap hit. | `src/config.ts` |
 | 12 | Low/info items: defensive filePath in readFile, skip symlinks, confirm SDK Zod enforcement (SEC #11, #12, #13) | Low | — | Belt-and-braces path validation in `gitClient.readFile`; `lstat` to skip symlinks in `discoverPackages`; manual test to confirm SDK validates Zod schemas pre-handler. | `src/gitClient.ts`, `src/config.ts` |

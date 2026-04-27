@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { DiggerConfig, GitAuth, RepoConfig } from "../config.js";
+import { filterPrefix, type DiggerConfig, type GitAuth, type RepoConfig } from "../config.js";
 import { TOOL_ANNOTATIONS } from "./shared.js";
 import * as gitClient from "../gitClient.js";
 import type { LsRemoteResult } from "../gitClient.js";
@@ -191,8 +191,8 @@ export async function digStatus(config: DiggerConfig): Promise<string> {
 function formatDiscovery(repo: RepoConfig, scan: ScanResult | null): string[] {
   const lines: string[] = [];
   if (repo.discoveryMode === "wildcard") {
-    const prefix = repo.namePrefix!;
-    lines.push(`- **Discovery:** wildcard (prefix "${prefix}")`);
+    const prefix = filterPrefix(repo.packageFilter!);
+    lines.push(`- **Discovery:** wildcard (filter "${repo.packageFilter}")`);
     if (scan) {
       const matchingRefs = scan.packages.filter((p) => p.startsWith(prefix));
       lines.push(
