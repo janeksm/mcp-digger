@@ -9,7 +9,7 @@ import {
 } from "../cacheManager.js";
 import type { DiggerConfig } from "../config.js";
 import { findPackage, formatUnknownPackage } from "../config.js";
-import { debug } from "../logger.js";
+import { debug, error } from "../logger.js";
 import { ensureReady } from "../repoManager.js";
 import { extractSignatures } from "../sourceExtractor.js";
 
@@ -106,8 +106,8 @@ export async function digSignatures(
 
     return formatSignatures(packageName, signatures);
   } catch (err) {
-    // Repo unavailable — try stale cache as fallback
     const msg = err instanceof Error ? err.message : String(err);
+    error("digSignatures", `package '${packageName}':`, msg);
     const stale = await readSignatures(pkg);
     if (stale.length > 0) {
       return (

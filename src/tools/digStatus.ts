@@ -4,7 +4,7 @@ import type { DiggerConfig, GitAuth, RepoConfig } from "../config.js";
 import { TOOL_ANNOTATIONS } from "./shared.js";
 import * as gitClient from "../gitClient.js";
 import type { LsRemoteResult } from "../gitClient.js";
-import { debug } from "../logger.js";
+import { debug, error } from "../logger.js";
 import {
   readScanCache,
   scanCachePath,
@@ -75,7 +75,7 @@ export async function digStatus(config: DiggerConfig): Promise<string> {
       await writeScanCache(config.cacheDir, scan);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      debug("digStatus", "scan failed:", msg);
+      error("digStatus", "scan failed:", msg);
     }
   }
   if (scan) {
@@ -157,6 +157,7 @@ export async function digStatus(config: DiggerConfig): Promise<string> {
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        error("digStatus", `repo '${repo.name}' local repo check failed:`, msg);
         sections.push(`- **Local repo valid:** FAILED — ${msg}`);
         repoIssues.push("local repo check error");
       }

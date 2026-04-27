@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./config.js";
-import { debug, initLogger } from "./logger.js";
+import { debug, error, initLogger } from "./logger.js";
 import { registerDigFile } from "./tools/digFile.js";
 import { registerDigOverview } from "./tools/digOverview.js";
 import { registerDigSignatures } from "./tools/digSignatures.js";
@@ -37,6 +37,7 @@ try {
 } catch (err) {
   const msg = err instanceof Error ? err.message : String(err);
   process.stderr.write(`[mcp-digger] fatal: ${msg}\n`);
+  error("startup", msg);
   process.exit(1);
 }
 

@@ -18,6 +18,10 @@ function logFilePath(): string {
   return path.join(tmpDir, ".digger", "debug.log");
 }
 
+function errorLogPath(): string {
+  return path.join(tmpDir, ".digger", "error.log");
+}
+
 async function loadLogger() {
   const mod = await import("./logger.js");
   return mod;
@@ -110,5 +114,68 @@ describe("logger", () => {
     expect(isDebugEnabled()).toBe(false);
     initLogger({ workspaceRoot: tmpDir, debug: true });
     expect(isDebugEnabled()).toBe(true);
+  });
+});
+
+describe("error()", () => {
+  it("writes to error.log before initLogger using cwd fallback", async () => {
+    const originalCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      const { error } = await loadLogger();
+      error("startup", "config broke");
+
+      const content = fs.readFileSync(errorLogPath(), "utf-8");
+      expect(content).toContain("[startup]");
+      expect(content).toContain("config broke");
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  it("writes to error.log after initLogger (debug disabled)", async () => {
+    const { error, initLogger } = await loadLogger();
+
+    initLogger({ workspaceRoot: tmpDir, debug: false });
+    error("digOverview", "repo failed");
+
+    const content = fs.readFileSync(errorLogPath(), "utf-8");
+    expect(content).toContain("[digOverview]");
+    expect(content).toContain("repo failed");
+  });
+
+  it("writes to error.log after initLogger (debug enabled)", async () => {
+    const { error, initLogger } = await loadLogger();
+
+    initLogger({ workspaceRoot: tmpDir, debug: true });
+    error("digFile", "not found");
+
+    const content = fs.readFileSync(errorLogPath(), "utf-8");
+    expect(content).toContain("[digFile]");
+    expect(content).toContain("not found");
+  });
+
+  it("does not write to debug.log", async () => {
+    const { error, initLogger } = await loadLogger();
+
+    initLogger({ workspaceRoot: tmpDir, debug: true });
+    error("test", "error only");
+
+    const debugContent = fs.readFileSync(logFilePath(), "utf-8");
+    expect(debugContent).not.toContain("error only");
+  });
+
+  it("truncates error.log when over 5 MB", async () => {
+    const errPath = errorLogPath();
+    fs.mkdirSync(path.dirname(errPath), { recursive: true });
+    fs.writeFileSync(errPath, "x".repeat(6 * 1024 * 1024));
+
+    const { error, initLogger } = await loadLogger();
+    initLogger({ workspaceRoot: tmpDir, debug: false });
+    error("test", "after truncate");
+
+    const content = fs.readFileSync(errPath, "utf-8");
+    expect(content).toContain("after truncate");
+    expect(content.length).toBeLessThan(1024);
   });
 });

@@ -8,7 +8,7 @@ import {
   writeOverview,
 } from "../cacheManager.js";
 import type { DiggerConfig, PackageConfig } from "../config.js";
-import { debug } from "../logger.js";
+import { debug, error } from "../logger.js";
 import { ensureAllReady } from "../repoManager.js";
 import { extractOverview } from "../sourceExtractor.js";
 
@@ -66,6 +66,7 @@ export async function digOverview(config: DiggerConfig): Promise<string> {
     if (result.warning) warnings.push(result.warning);
 
     if (result.error) {
+      error("digOverview", `repo '${repo.name}':`, result.error);
       warnings.push(`Repo '${repo.name}': ${result.error}`);
       sections.push(
         `## ${repo.name}\n\n*${result.error.split("\n")[0]}*\n\n${result.error}`,
@@ -101,6 +102,7 @@ export async function digOverview(config: DiggerConfig): Promise<string> {
             return overview;
           } catch (pkgErr) {
             const msg = pkgErr instanceof Error ? pkgErr.message : String(pkgErr);
+            error("digOverview", `package '${pkg.name}' overview generation failed:`, msg);
             return `## ${pkg.name}\n\n*Error generating overview.* ${msg}\n`;
           }
         }),
@@ -112,6 +114,7 @@ export async function digOverview(config: DiggerConfig): Promise<string> {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      error("digOverview", `repo '${repo.name}':`, msg);
       warnings.push(`Repo '${repo.name}': ${msg}`);
       await appendStaleFallback(sections, repo.packages, msg);
     }

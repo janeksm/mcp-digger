@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { DiggerConfig } from "../config.js";
 import { findPackage, formatUnknownPackage } from "../config.js";
 import { GitError, listFiles, readFile } from "../gitClient.js";
-import { debug } from "../logger.js";
+import { debug, error } from "../logger.js";
 import { ensureReady } from "../repoManager.js";
 
 // ── Tool description (shown to Claude Code) ──
@@ -89,6 +89,7 @@ export async function digFile(
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    error("digFile", `package '${packageName}' file '${filePath}':`, msg);
     return `# ${packageName} — ${filePath}\n\nSource unavailable. ${msg}`;
   }
 }
