@@ -669,3 +669,16 @@ export function formatUnknownPackage(
 
   return lines.join("\n");
 }
+
+/** Format an error message for an unknown repo name. */
+export function formatUnknownRepo(
+  config: DiggerConfig,
+  repoName: string,
+): string {
+  const available = config.repos.map((r) => r.name);
+  if (available.length > 0) {
+    const listing = available.map((n) => `- ${n}`).join("\n");
+    return `Unknown repo '${repoName}'. Available repos:\n${listing}`;
+  }
+  return `Unknown repo '${repoName}'. No repos are configured.`;
+}

@@ -1,6 +1,6 @@
 # mcp-digger — MCP Design
 
-> MCP server exposing four tools over stdio transport. Claude Code discovers tools via their descriptions and decides when to call each one.
+> MCP server exposing five tools over stdio transport. Claude Code discovers tools via their descriptions and decides when to call each one.
 
 ## Server
 
@@ -24,17 +24,29 @@
 
 **Output:** Markdown report with config summary (auth strategy, PAT status, repo count, warnings), workspace-scan summary (when any repo uses wildcard mode — `.sln`/`.slnx`/`Directory.*.props`/`Directory.*.targets` counts, total referenced packages, cache file path), and per-repo checks (discovery mode with wildcard prefix + matching references, local path validation, remote connectivity via `git ls-remote`). Rich error context on failure: auth attempts made, exact error, actionable hints.
 
+### `dig_list` — Discovery: Available Repos & Packages
+
+| Field | Value |
+|-------|-------|
+| File | `src/tools/digList.ts` |
+| Input | *(none)* |
+| Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
+
+**Purpose:** Lists all configured repositories and their resolved package names. Call first to discover what's available before digging into any specific repo or package.
+
+**Output:** Markdown listing of repos with their package names. Wildcard repos show `(wildcard)` suffix. Warns if repo resolution was incomplete.
+
 ### `dig_overview` — Level 1: Package Overview
 
 | Field | Value |
 |-------|-------|
 | File | `src/tools/digOverview.ts` |
-| Input | *(none)* |
+| Input | `repoName: string` — Name of the repository to overview (as shown by dig_list) |
 | Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
-**Purpose:** Returns a markdown overview of all configured packages — purpose, key public types/interfaces, architectural conventions, usage patterns. Call this first before working with internal packages.
+**Purpose:** Returns a markdown overview of a single repo's packages — purpose, key public types/interfaces, architectural conventions, usage patterns. Call dig_list first to discover available repos.
 
-**Output:** Concatenated markdown sections per package. Falls back to stale cache or "unavailable" message when a repo is unreachable.
+**Output:** Markdown sections per package in the specified repo. Falls back to stale cache or "unavailable" message when a repo is unreachable. Returns unknown-repo message with available repos when name doesn't match.
 
 ### `dig_signatures` — Level 2: Public API Signatures
 
@@ -56,17 +68,17 @@
 | Input | `packageName: string` — Exact name of the internal NuGet package (e.g. 'MyCompany.Core'); `filePath: string` — File path relative to the package root, as listed by dig_signatures (e.g. 'Services/FooService.cs') |
 | Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
-**Purpose:** Full source of a single file. Call only when implementation detail is needed — tracing behaviour, understanding algorithms, debugging. Avoid speculative calls.
+**Purpose:** Full source of a single file. Call only when implementation detail is needed — tracing behaviour, understanding algorithms, debugging. Avoid speculative calls. Capped at 1 MB (`FILE_CHAR_LIMIT`).
 
-**Output:** Full file content with language hint. On invalid path, lists valid files under the package directory.
+**Output:** Full file content with language hint. Rejects files exceeding 1 MB with a friendly message. On invalid path, lists valid files under the package directory.
 
 ## Tool Interaction Pattern
 
 Claude Code follows a progressive disclosure pattern — escalating detail only as needed:
 
 ```
-dig_status  →  dig_overview  →  dig_signatures  →  dig_file
-(health)       (what exists)    (public API)       (implementation)
+dig_status  →  dig_list  →  dig_overview(repo)  →  dig_signatures(pkg)  →  dig_file(pkg, file)
+(health)       (discover)   (what exists)           (public API)            (implementation)
 ```
 
 Each tool's description guides Claude on when to escalate to the next level.

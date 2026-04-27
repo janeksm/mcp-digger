@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS } from "./shared.js";
+import { FILE_CHAR_LIMIT, PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS } from "./shared.js";
 import { z } from "zod";
 import type { DiggerConfig } from "../config.js";
 import { findPackage, formatUnknownPackage } from "../config.js";
@@ -78,6 +78,9 @@ export async function digFile(
 
     try {
       const content = await readFile(result.sourcePath, fullPath);
+      if (content.length > FILE_CHAR_LIMIT) {
+        return `# ${packageName} — ${filePath}\n\nFile too large (${content.length.toLocaleString()} chars, limit ${FILE_CHAR_LIMIT.toLocaleString()}). Use dig_signatures for the public API, or view this file in your editor.`;
+      }
       return formatFile(packageName, filePath, content);
     } catch (err) {
       if (err instanceof GitError) {

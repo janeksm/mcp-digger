@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TOOL_ANNOTATIONS } from "./shared.js";
+import { z } from "zod";
 import {
   invalidate,
   isFresh,
@@ -8,24 +9,22 @@ import {
   writeOverview,
 } from "../cacheManager.js";
 import type { DiggerConfig, PackageConfig } from "../config.js";
+import { formatUnknownRepo } from "../config.js";
 import { debug, error } from "../logger.js";
-import { ensureAllReady } from "../repoManager.js";
+import { ensureReady } from "../repoManager.js";
 import { extractOverview } from "../sourceExtractor.js";
 
 // ── Tool description (shown to Claude Code) ──
 
-const DESCRIPTION = `Digs the surface of all configured internal NuGet shared libraries.
+const DESCRIPTION = `Digs the surface of a single repository's internal NuGet shared libraries.
 Returns a markdown overview including: purpose of each package, key public types
 and interfaces (summarised), architectural conventions, and usage patterns.
-Call this first before working on any code that uses internal packages.
+Call dig_list first to discover available repos, then call this with a repo name.
 If you need to dig deeper — precise method signatures, generics, or parameter
 types — call dig_signatures instead.`;
 
 // ── Public API ──
 
-/**
- * Register the dig_overview tool on an MCP server.
- */
 export function registerDigOverview(
   server: McpServer,
   config: DiggerConfig,
@@ -35,34 +34,32 @@ export function registerDigOverview(
     {
       title: "Dig Overview",
       description: DESCRIPTION,
+      inputSchema: {
+        repoName: z.string().describe("Name of the repository to overview (as shown by dig_list)"),
+      },
       annotations: TOOL_ANNOTATIONS,
     },
-    async () => ({
-      content: [{ type: "text" as const, text: await digOverview(config) }],
+    async ({ repoName }) => ({
+      content: [{ type: "text" as const, text: await digOverview(config, repoName) }],
     }),
   );
 }
 
-/**
- * Generate the concatenated overview markdown for all configured packages.
- *
- * For each repo:
- * 1. Ensure the repo is on disk and get the current commit hash.
- * 2. If the cache is stale, invalidate and regenerate overviews for all packages.
- * 3. If the cache is fresh but a package overview is missing, generate just that one.
- * 4. Collect all overviews and any warnings into a single markdown response.
- *
- * Never throws — returns a usable response even when repos are unreachable.
- */
-export async function digOverview(config: DiggerConfig): Promise<string> {
-  debug("digOverview", "called");
+/** Never throws — returns a usable response even when the repo is unreachable. */
+export async function digOverview(
+  config: DiggerConfig,
+  repoName: string,
+): Promise<string> {
+  debug("digOverview", "called for repo", repoName);
+
+  const repo = config.repos.find((r) => r.name === repoName);
+  if (!repo) return formatUnknownRepo(config, repoName);
+
   const sections: string[] = [];
   const warnings: string[] = [];
 
-  const results = await ensureAllReady(config);
-
-  for (const repo of config.repos) {
-    const result = results.get(repo.name)!;
+  try {
+    const result = await ensureReady(repo, config);
     if (result.warning) warnings.push(result.warning);
 
     if (result.error) {
@@ -72,10 +69,7 @@ export async function digOverview(config: DiggerConfig): Promise<string> {
         `## ${repo.name}\n\n*${result.error.split("\n")[0]}*\n\n${result.error}`,
       );
       await appendStaleFallback(sections, repo.packages, result.error);
-      continue;
-    }
-
-    try {
+    } else {
       const fresh = await isFresh(
         config.cacheDir,
         repo.name,
@@ -86,7 +80,6 @@ export async function digOverview(config: DiggerConfig): Promise<string> {
         await invalidate(config.cacheDir, repo.name, repo.packages);
       }
 
-      // Generate any missing overviews (packages are independent — run in parallel)
       const overviews = await Promise.all(
         repo.packages.map(async (pkg) => {
           try {
@@ -112,12 +105,12 @@ export async function digOverview(config: DiggerConfig): Promise<string> {
       if (!fresh) {
         await markFresh(config.cacheDir, repo.name, result.currentHash);
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      error("digOverview", `repo '${repo.name}':`, msg);
-      warnings.push(`Repo '${repo.name}': ${msg}`);
-      await appendStaleFallback(sections, repo.packages, msg);
     }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    error("digOverview", `repo '${repo.name}':`, msg);
+    warnings.push(`Repo '${repo.name}': ${msg}`);
+    await appendStaleFallback(sections, repo.packages, msg);
   }
 
   if (warnings.length > 0) {
@@ -129,12 +122,11 @@ export async function digOverview(config: DiggerConfig): Promise<string> {
   }
 
   const output = sections.join("\n\n").trimEnd();
-  return output || "No packages configured.";
+  return output || `No packages in repo '${repoName}'.`;
 }
 
 // ── Internal ──
 
-/** Try reading stale cached overviews; show unavailable message if no cache exists. */
 async function appendStaleFallback(
   sections: string[],
   packages: readonly PackageConfig[],

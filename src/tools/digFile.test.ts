@@ -234,3 +234,25 @@ describe("error handling", () => {
     expect(result).toContain("Source unavailable");
   });
 });
+
+// ── File size cap ──
+
+describe("file size cap", () => {
+  it("rejects files exceeding FILE_CHAR_LIMIT", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const largeContent = "x".repeat(1_100_000);
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/Huge.cs": largeContent,
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digFile(config, "MyLib", "Huge.cs");
+
+    expect(result).toContain("File too large");
+    expect(result).toContain("1,100,000");
+    expect(result).not.toContain(largeContent);
+  });
+});
