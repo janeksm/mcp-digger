@@ -10,6 +10,7 @@ import {
   isValidPackageName,
   loadConfig,
   parseEnvFile,
+  validateRepoUrl,
   type ConfigFile,
   type RepoConfig,
 } from "./config.js";
@@ -84,6 +85,31 @@ describe("isValidPackageName", () => {
     ["pkg@1.0", "at sign"],
   ])("rejects invalid name: %s (%s)", (name) => {
     expect(isValidPackageName(name)).toBe(false);
+  });
+});
+
+// ── validateRepoUrl ──
+
+describe("validateRepoUrl", () => {
+  it.each([
+    "https://gitlab.company.com/shared/bsf.git",
+    "ssh://git@gitlab.company.com/shared/bsf.git",
+    "git@gitlab.company.com:shared/bsf.git",
+  ])("accepts valid URL: %s", (url) => {
+    expect(validateRepoUrl(url)).toBeUndefined();
+  });
+
+  it.each([
+    ["http://example.com/repo.git", "http:"],
+    ["git://example.com/repo.git", "git:"],
+    ["file:///tmp/repo.git", "file:"],
+    ["ftp://example.com/repo", "ftp:"],
+  ])("rejects disallowed scheme: %s", (url, scheme) => {
+    expect(validateRepoUrl(url)).toMatch(new RegExp(`'${scheme}'.*not allowed`));
+  });
+
+  it("rejects garbage input", () => {
+    expect(validateRepoUrl("not a url at all")).toMatch(/is not a valid URL/);
   });
 });
 
@@ -475,6 +501,42 @@ describe("loadConfig — fatal errors", () => {
     };
     const { env, cwd } = setupConfig(config);
     expect(() => loadConfig(env, cwd)).toThrow(/invalid characters/);
+  });
+
+  it.each([
+    ["file:///tmp/repo.git", /not allowed/],
+    ["git://example.com/repo.git", /not allowed/],
+    ["http://example.com/repo.git", /not allowed/],
+  ])("throws on disallowed URL scheme: %s", (url, pattern) => {
+    const config: ConfigFile = {
+      repos: [{ name: "bsf", url, packages: ["Pkg"] }],
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(pattern);
+  });
+});
+
+describe("loadConfig — URL schemes", () => {
+  it("accepts SSH shorthand URL", () => {
+    const config: ConfigFile = {
+      repos: [
+        { name: "bsf", url: "git@gitlab.company.com:shared/bsf.git", packages: ["Pkg"] },
+      ],
+    };
+    const { env, cwd } = setupConfig(config);
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.repos[0]!.url).toBe("git@gitlab.company.com:shared/bsf.git");
+  });
+
+  it("accepts ssh:// URL", () => {
+    const config: ConfigFile = {
+      repos: [
+        { name: "bsf", url: "ssh://git@gitlab.company.com/shared/bsf.git", packages: ["Pkg"] },
+      ],
+    };
+    const { env, cwd } = setupConfig(config);
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.repos[0]!.url).toBe("ssh://git@gitlab.company.com/shared/bsf.git");
   });
 });
 

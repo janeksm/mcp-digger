@@ -129,6 +129,26 @@ export function isValidPackageName(name: string): boolean {
   return SAFE_NAME_RE.test(name);
 }
 
+const SSH_SHORTHAND_RE = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:.+$/;
+const ALLOWED_URL_SCHEMES = new Set(["https:", "ssh:"]);
+
+export function validateRepoUrl(url: string): string | undefined {
+  if (SSH_SHORTHAND_RE.test(url)) return undefined;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "is not a valid URL or SSH shorthand (git@host:path).";
+  }
+
+  if (!ALLOWED_URL_SCHEMES.has(parsed.protocol)) {
+    return `uses scheme '${parsed.protocol}' which is not allowed. Use https:// or ssh://.`;
+  }
+
+  return undefined;
+}
+
 function buildPackageConfig(
   name: string,
   repoName: string,
@@ -437,6 +457,12 @@ export function loadConfig(
     }
 
     const url = repoDef.url?.trim() || undefined;
+    if (url) {
+      const urlError = validateRepoUrl(url);
+      if (urlError) {
+        errors.push(`Repo '${name}': URL ${urlError}`);
+      }
+    }
     const localRaw = localRepos.get(name);
     const localPath = localRaw ? path.resolve(cwd, localRaw) : undefined;
 
