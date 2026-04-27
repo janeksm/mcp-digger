@@ -47,7 +47,9 @@ export async function markFresh(
     commitHash,
     updatedAt: new Date().toISOString(),
   };
-  await fs.promises.writeFile(metaPath, JSON.stringify(meta, null, 2));
+  const tmpPath = metaPath + ".tmp";
+  await fs.promises.writeFile(tmpPath, JSON.stringify(meta, null, 2));
+  await fs.promises.rename(tmpPath, metaPath);
 }
 
 /**

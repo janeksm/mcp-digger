@@ -11,6 +11,7 @@ import {
 import type { DiggerConfig, PackageConfig } from "../config.js";
 import { formatUnknownRepo } from "../config.js";
 import { debug, error } from "../logger.js";
+import { withRepoLock } from "../repoLock.js";
 import { ensureReady } from "../repoManager.js";
 import { extractOverview } from "../sourceExtractor.js";
 
@@ -54,77 +55,79 @@ export async function digOverview(
   const repo = config.repos.find((r) => r.name === repoName);
   if (!repo) return toolError(formatUnknownRepo(config, repoName));
 
-  const sections: string[] = [];
-  const warnings: string[] = [];
-  let hasContent: boolean;
+  return withRepoLock(repo.name, async () => {
+    const sections: string[] = [];
+    const warnings: string[] = [];
+    let hasContent: boolean;
 
-  try {
-    const result = await ensureReady(repo, config);
-    if (result.warning) warnings.push(result.warning);
+    try {
+      const result = await ensureReady(repo, config);
+      if (result.warning) warnings.push(result.warning);
 
-    if (result.error) {
-      error("digOverview", `repo '${repo.name}':`, result.error);
-      warnings.push(`Repo '${repo.name}': ${result.error}`);
-      sections.push(
-        `## ${repo.name}\n\n*${result.error.split("\n")[0]}*\n\n${result.error}`,
-      );
-      hasContent = await appendStaleFallback(sections, repo.packages, result.error);
-    } else {
-      const fresh = await isFresh(
-        config.cacheDir,
-        repo.name,
-        result.currentHash,
-      );
+      if (result.error) {
+        error("digOverview", `repo '${repo.name}':`, result.error);
+        warnings.push(`Repo '${repo.name}': ${result.error}`);
+        sections.push(
+          `## ${repo.name}\n\n*${result.error.split("\n")[0]}*\n\n${result.error}`,
+        );
+        hasContent = await appendStaleFallback(sections, repo.packages, result.error);
+      } else {
+        const fresh = await isFresh(
+          config.cacheDir,
+          repo.name,
+          result.currentHash,
+        );
 
-      if (!fresh) {
-        await invalidate(config.cacheDir, repo.name, repo.packages);
+        if (!fresh) {
+          await invalidate(config.cacheDir, repo.name, repo.packages);
+        }
+
+        const overviews = await Promise.all(
+          repo.packages.map(async (pkg) => {
+            try {
+              const cached = fresh ? await readOverview(pkg) : undefined;
+              if (cached !== undefined) return cached;
+
+              const overview = await extractOverview(
+                result.sourcePath,
+                pkg,
+                result.currentHash,
+              );
+              await writeOverview(pkg, overview);
+              return overview;
+            } catch (pkgErr) {
+              const msg = pkgErr instanceof Error ? pkgErr.message : String(pkgErr);
+              error("digOverview", `package '${pkg.name}' overview generation failed:`, msg);
+              return `## ${pkg.name}\n\n*Error generating overview.* ${msg}\n`;
+            }
+          }),
+        );
+        sections.push(...overviews);
+        hasContent = true;
+
+        if (!fresh) {
+          await markFresh(config.cacheDir, repo.name, result.currentHash);
+        }
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      error("digOverview", `repo '${repo.name}':`, msg);
+      warnings.push(`Repo '${repo.name}': ${msg}`);
+      hasContent = await appendStaleFallback(sections, repo.packages, msg);
+    }
 
-      const overviews = await Promise.all(
-        repo.packages.map(async (pkg) => {
-          try {
-            const cached = fresh ? await readOverview(pkg) : undefined;
-            if (cached !== undefined) return cached;
-
-            const overview = await extractOverview(
-              result.sourcePath,
-              pkg,
-              result.currentHash,
-            );
-            await writeOverview(pkg, overview);
-            return overview;
-          } catch (pkgErr) {
-            const msg = pkgErr instanceof Error ? pkgErr.message : String(pkgErr);
-            error("digOverview", `package '${pkg.name}' overview generation failed:`, msg);
-            return `## ${pkg.name}\n\n*Error generating overview.* ${msg}\n`;
-          }
-        }),
-      );
-      sections.push(...overviews);
-      hasContent = true;
-
-      if (!fresh) {
-        await markFresh(config.cacheDir, repo.name, result.currentHash);
+    if (warnings.length > 0) {
+      sections.push("---\n\n## Warnings\n");
+      for (const w of warnings) {
+        sections.push(`- ${w}`);
       }
+      sections.push("");
     }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    error("digOverview", `repo '${repo.name}':`, msg);
-    warnings.push(`Repo '${repo.name}': ${msg}`);
-    hasContent = await appendStaleFallback(sections, repo.packages, msg);
-  }
 
-  if (warnings.length > 0) {
-    sections.push("---\n\n## Warnings\n");
-    for (const w of warnings) {
-      sections.push(`- ${w}`);
-    }
-    sections.push("");
-  }
-
-  const output = sections.join("\n\n").trimEnd();
-  if (!output) return toolSuccess(`No packages in repo '${repoName}'.`);
-  return hasContent ? toolSuccess(output) : toolError(output);
+    const output = sections.join("\n\n").trimEnd();
+    if (!output) return toolSuccess(`No packages in repo '${repoName}'.`);
+    return hasContent ? toolSuccess(output) : toolError(output);
+  });
 }
 
 // ── Internal ──

@@ -10,6 +10,7 @@ import {
 import type { DiggerConfig } from "../config.js";
 import { findPackage, formatUnknownPackage } from "../config.js";
 import { debug, error } from "../logger.js";
+import { withRepoLock } from "../repoLock.js";
 import { ensureReady } from "../repoManager.js";
 import { extractSignatures } from "../sourceExtractor.js";
 
@@ -54,53 +55,55 @@ export async function digSignatures(
 
   const repo = config.repos.find((r) => r.name === pkg.repoName)!;
 
-  try {
-    const result = await ensureReady(repo, config);
+  return withRepoLock(repo.name, async () => {
+    try {
+      const result = await ensureReady(repo, config);
 
-    const fresh = await isFresh(config.cacheDir, repo.name, result.currentHash);
-
-    if (!fresh) {
-      await invalidate(config.cacheDir, repo.name, repo.packages);
-    }
-
-    // Try cached signatures first
-    let signatures = fresh ? await readSignatures(pkg) : [];
-
-    if (signatures.length === 0) {
-      // Generate and cache
-      const extracted = await extractSignatures(
-        result.sourcePath,
-        pkg,
-        result.currentHash,
-      );
-
-      await Promise.all(
-        extracted.map((sig) => writeSignature(pkg, sig.filePath, sig.content)),
-      );
-      signatures = extracted;
+      const fresh = await isFresh(config.cacheDir, repo.name, result.currentHash);
 
       if (!fresh) {
-        await markFresh(config.cacheDir, repo.name, result.currentHash);
+        await invalidate(config.cacheDir, repo.name, repo.packages);
       }
-    }
 
-    if (signatures.length === 0) {
-      return toolSuccess(`# ${packageName}\n\nNo .cs source files found.`);
-    }
+      // Try cached signatures first
+      let signatures = fresh ? await readSignatures(pkg) : [];
 
-    return toolSuccess(formatSignatures(packageName, signatures));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    error("digSignatures", `package '${packageName}':`, msg);
-    const stale = await readSignatures(pkg);
-    if (stale.length > 0) {
-      return toolSuccess(
-        formatSignatures(packageName, stale) +
-        `\n\n---\n\n> **Warning:** Signatures may be stale. ${msg}`,
-      );
+      if (signatures.length === 0) {
+        // Generate and cache
+        const extracted = await extractSignatures(
+          result.sourcePath,
+          pkg,
+          result.currentHash,
+        );
+
+        await Promise.all(
+          extracted.map((sig) => writeSignature(pkg, sig.filePath, sig.content)),
+        );
+        signatures = extracted;
+
+        if (!fresh) {
+          await markFresh(config.cacheDir, repo.name, result.currentHash);
+        }
+      }
+
+      if (signatures.length === 0) {
+        return toolSuccess(`# ${packageName}\n\nNo .cs source files found.`);
+      }
+
+      return toolSuccess(formatSignatures(packageName, signatures));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      error("digSignatures", `package '${packageName}':`, msg);
+      const stale = await readSignatures(pkg);
+      if (stale.length > 0) {
+        return toolSuccess(
+          formatSignatures(packageName, stale) +
+          `\n\n---\n\n> **Warning:** Signatures may be stale. ${msg}`,
+        );
+      }
+      return toolError(`# ${packageName}\n\nSource unavailable. ${msg}`);
     }
-    return toolError(`# ${packageName}\n\nSource unavailable. ${msg}`);
-  }
+  });
 }
 
 // ── Internal ──

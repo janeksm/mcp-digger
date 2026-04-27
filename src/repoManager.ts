@@ -3,6 +3,7 @@ import type { DiggerConfig, PackageConfig, RepoConfig } from "./config.js";
 import { discoverPackages } from "./config.js";
 import * as gitClient from "./gitClient.js";
 import { debug } from "./logger.js";
+import { withRepoLock } from "./repoLock.js";
 import {
   scanCachePath,
   scanWorkspace,
@@ -131,7 +132,7 @@ export async function ensureAllReady(
   const results = new Map<string, RepoReadyResult>();
   for (const repo of config.repos) {
     try {
-      results.set(repo.name, await ensureReady(repo, config, scan));
+      results.set(repo.name, await withRepoLock(repo.name, () => ensureReady(repo, config, scan)));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       debug("repoManager", repo.name, "ensureReady threw:", msg);

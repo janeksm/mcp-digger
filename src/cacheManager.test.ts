@@ -236,3 +236,21 @@ describe("full cache cycle", () => {
     expect(await readSignatures(pkg)).toEqual([]);
   });
 });
+
+// ── Atomic write ──
+
+describe("markFresh atomic write", () => {
+  it("leaves no .tmp file after writing", async () => {
+    await markFresh(cacheDir, "myrepo", "abc123");
+
+    const metaDir = path.join(cacheDir, "meta");
+    const files = fs.readdirSync(metaDir);
+    expect(files).toEqual(["myrepo.json"]);
+    expect(files.some((f) => f.endsWith(".tmp"))).toBe(false);
+  });
+
+  it("writes valid JSON that isFresh can read", async () => {
+    await markFresh(cacheDir, "myrepo", "abc123");
+    expect(await isFresh(cacheDir, "myrepo", "abc123")).toBe(true);
+  });
+});

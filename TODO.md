@@ -40,9 +40,9 @@
 | 5 | Restrict repo URL schemes to `https:`/`ssh:` (SEC #5) | High | done | 8517ee0 | `src/config.ts` |
 | 6 | Cap dig_file + scope dig_overview to single repo + new dig_list tool (SEC #3) | High | done | 9dc7f95 | `src/tools/digFile.ts`, `src/tools/digOverview.ts`, `src/tools/digList.ts`, `src/tools/shared.ts`, `src/index.ts` |
 | 7 | Return `isError: true` on error responses | High | done | 2b5a8bd | `src/tools/digFile.ts`, `src/tools/digSignatures.ts`, `src/tools/digOverview.ts`, `src/tools/shared.ts` |
-| 8 | Atomic `meta.json` writes + per-repo mutex (SEC #6, #10) | High | — | Non-atomic writes corrupt cache on crash. Concurrent tool calls interleave invalidate-regenerate. Write to `.tmp` then rename; promise-map mutex keyed by `repo.name`. | `src/cacheManager.ts`, `src/repoManager.ts` |
+| 8 | Atomic `meta.json` writes + per-repo mutex (SEC #6, #10) | High | done | 1747ebf | `src/cacheManager.ts`, `src/repoManager.ts`, `src/repoLock.ts`, `src/tools/digOverview.ts`, `src/tools/digSignatures.ts`, `src/tools/digFile.ts` |
+| 11 | Close SEC #9 — log-file size cap already exists | Done | done | Verified: `MAX_LOG_SIZE = 5 * 1024 * 1024` at `logger.ts:12`, truncation at lines 58-63. Update TODO.SEC.md. | `TODO.SEC.md` |
+| 13 | Fix stale `dig_overview` references → `dig_list` in user-facing messages | Low | done | 69e51a1 | `src/tools/digStatus.ts`, `src/config.ts` |
 | 9 | Prototype-pollution hardening on `JSON.parse` (SEC #7) | Medium | — | `JSON.parse(raw) as T` trusts shape. Construct fresh objects with only known fields. Low practical impact but cheap defense-in-depth. | `src/config.ts`, `src/cacheManager.ts` |
 | 10 | Cap fan-out in `discoverPackages` (SEC #8) | Medium | — | Unbounded `Promise.all` over all candidate dirs. `.slice(0, MAX)` or concurrency limiter. Log warning if cap hit. | `src/config.ts` |
-| 11 | Close SEC #9 — log-file size cap already exists | Done | done | Verified: `MAX_LOG_SIZE = 5 * 1024 * 1024` at `logger.ts:12`, truncation at lines 58-63. Update TODO.SEC.md. | `TODO.SEC.md` |
 | 12 | Low/info items: defensive filePath in readFile, skip symlinks, confirm SDK Zod enforcement (SEC #11, #12, #13) | Low | — | Belt-and-braces path validation in `gitClient.readFile`; `lstat` to skip symlinks in `discoverPackages`; manual test to confirm SDK validates Zod schemas pre-handler. | `src/gitClient.ts`, `src/config.ts` |
-| 13 | Fix stale `dig_overview` references → `dig_list` in user-facing messages | Low | done | 69e51a1 | `src/tools/digStatus.ts`, `src/config.ts` |

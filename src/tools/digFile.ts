@@ -6,6 +6,7 @@ import type { DiggerConfig } from "../config.js";
 import { findPackage, formatUnknownPackage } from "../config.js";
 import { GitError, listFiles, readFile } from "../gitClient.js";
 import { debug, error } from "../logger.js";
+import { withRepoLock } from "../repoLock.js";
 import { ensureReady } from "../repoManager.js";
 
 // ── Tool description (shown to Claude Code) ──
@@ -56,29 +57,31 @@ export async function digFile(
 
   const repo = config.repos.find((r) => r.name === pkg.repoName)!;
 
-  try {
-    const result = await ensureReady(repo, config);
-    const fullPath = `${pkg.pathInRepo}/${safeFilePath}`;
-
+  return withRepoLock(repo.name, async () => {
     try {
-      const content = await readFile(result.sourcePath, fullPath);
-      if (content.length > FILE_CHAR_LIMIT) {
-        return toolError(`# ${packageName} — ${filePath}\n\nFile too large (${content.length.toLocaleString()} chars, limit ${FILE_CHAR_LIMIT.toLocaleString()}). Use dig_signatures for the public API, or view this file in your editor.`);
+      const result = await ensureReady(repo, config);
+      const fullPath = `${pkg.pathInRepo}/${safeFilePath}`;
+
+      try {
+        const content = await readFile(result.sourcePath, fullPath);
+        if (content.length > FILE_CHAR_LIMIT) {
+          return toolError(`# ${packageName} — ${filePath}\n\nFile too large (${content.length.toLocaleString()} chars, limit ${FILE_CHAR_LIMIT.toLocaleString()}). Use dig_signatures for the public API, or view this file in your editor.`);
+        }
+        return toolSuccess(formatFile(packageName, filePath, content));
+      } catch (err) {
+        if (err instanceof GitError) {
+          // File not found — list valid paths
+          const validPaths = await listValidPaths(result.sourcePath, pkg.pathInRepo);
+          return toolError(formatInvalidPath(packageName, filePath, validPaths));
+        }
+        throw err;
       }
-      return toolSuccess(formatFile(packageName, filePath, content));
     } catch (err) {
-      if (err instanceof GitError) {
-        // File not found — list valid paths
-        const validPaths = await listValidPaths(result.sourcePath, pkg.pathInRepo);
-        return toolError(formatInvalidPath(packageName, filePath, validPaths));
-      }
-      throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      error("digFile", `package '${packageName}' file '${filePath}':`, msg);
+      return toolError(`# ${packageName} — ${filePath}\n\nSource unavailable. ${msg}`);
     }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    error("digFile", `package '${packageName}' file '${filePath}':`, msg);
-    return toolError(`# ${packageName} — ${filePath}\n\nSource unavailable. ${msg}`);
-  }
+  });
 }
 
 // ── Internal ──

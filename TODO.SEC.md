@@ -8,11 +8,11 @@
 | 3 | High | `src/tools/digFile.ts` | Cap file size returned by `dig_file` | — |
 | 4 | High | `src/config.ts` | Validate package names against a safe charset | — |
 | 5 | High | `src/config.ts` | Restrict repo URL schemes to `https:` / `ssh:` | — |
-| 6 | High | `src/cacheManager.ts`, `src/tools/digSignatures.ts` | Atomic `meta.json` writes + per-repo serialization to fix cache TOCTOU | — |
+| 6 | High | `src/cacheManager.ts`, `src/tools/digSignatures.ts` | Atomic `meta.json` writes + per-repo serialization to fix cache TOCTOU | done |
 | 7 | Medium | `src/config.ts`, `src/cacheManager.ts` | Extract only known fields from `JSON.parse` output (prototype-pollution hardening) | — |
 | 8 | Medium | `src/config.ts` | Cap fan-out in `discoverPackages` (unbounded `Promise.all`) | — |
 | 9 | Medium | `src/logger.ts` | Verify 5 MB log-file size cap from the plan actually exists | — |
-| 10 | Low | `src/repoManager.ts` | Per-repo mutex to serialize concurrent `ensureReady` calls | — |
+| 10 | Low | `src/repoManager.ts` | Per-repo mutex to serialize concurrent `ensureReady` calls | done |
 | 11 | Low | `src/gitClient.ts` | Defensive `filePath` validation in `readFile` (belt-and-braces) | — |
 | 12 | Low | `src/config.ts` | Review symlink-following in `discoverPackages` | — |
 | 13 | Info | `@modelcontextprotocol/sdk` usage | Confirm Zod `inputSchema` is enforced by the MCP SDK (possible false positive) | — |
