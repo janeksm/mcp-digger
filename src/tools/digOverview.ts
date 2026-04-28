@@ -21,8 +21,8 @@ const DESCRIPTION = `Digs the surface of a single repository's internal NuGet sh
 Returns a markdown overview including: purpose of each package, key public types
 and interfaces (summarised), architectural conventions, and usage patterns.
 Call dig_list first to discover available repos, then call this with a repo name.
-If you need to dig deeper — precise method signatures, generics, or parameter
-types — call dig_signatures instead.`;
+If you need to dig deeper — to find which file contains a specific type or method
+— call dig_lookup to search the package index.`;
 
 // ── Public API ──
 

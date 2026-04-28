@@ -11,7 +11,7 @@ interface RepoMeta {
 }
 
 const OVERVIEW_FILE = "overview.md";
-const SIGNATURES_DIR = "signatures";
+const INDEX_FILE = "index.dat";
 
 // ── Public API ──
 
@@ -97,47 +97,30 @@ export async function readOverview(
 }
 
 /**
- * Write a stripped .cs signature file to a package's cache.
- * `relPath` is the repo-relative path (e.g. "src/MyLib/Class1.cs").
+ * Write a package's symbol index to its cache directory (atomic).
  */
-export async function writeSignature(
+export async function writeIndex(
   pkg: PackageConfig,
-  relPath: string,
   content: string,
 ): Promise<void> {
-  const sigPath = path.join(pkg.cachePath, SIGNATURES_DIR, relPath);
-  await fs.promises.mkdir(path.dirname(sigPath), { recursive: true });
-  await fs.promises.writeFile(sigPath, content);
+  await fs.promises.mkdir(pkg.cachePath, { recursive: true });
+  const target = path.join(pkg.cachePath, INDEX_FILE);
+  const tmpPath = target + ".tmp";
+  await fs.promises.writeFile(tmpPath, content);
+  await fs.promises.rename(tmpPath, target);
 }
 
 /**
- * Read all cached signature files for a package.
- * Returns an array of { filePath, content } sorted by path.
+ * Read a package's cached symbol index. Returns undefined if not cached.
  */
-export async function readSignatures(
+export async function readIndex(
   pkg: PackageConfig,
-): Promise<Array<{ filePath: string; content: string }>> {
-  const sigDir = path.join(pkg.cachePath, SIGNATURES_DIR);
-
-  let entries: fs.Dirent[];
+): Promise<string | undefined> {
   try {
-    entries = await fs.promises.readdir(sigDir, { withFileTypes: true, recursive: true });
+    return await fs.promises.readFile(path.join(pkg.cachePath, INDEX_FILE), "utf-8");
   } catch {
-    return [];
+    return undefined;
   }
-
-  const fileEntries = entries.filter((e) => e.isFile());
-  const results = await Promise.all(
-    fileEntries.map(async (entry) => {
-      const fullPath = path.join(entry.parentPath ?? entry.path, entry.name);
-      const content = await fs.promises.readFile(fullPath, "utf-8");
-      const relPath = path.relative(sigDir, fullPath).replace(/\\/g, "/");
-      return { filePath: relPath, content };
-    }),
-  );
-
-  results.sort((a, b) => a.filePath.localeCompare(b.filePath));
-  return results;
 }
 
 // ── Internal ──

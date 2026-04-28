@@ -29,7 +29,7 @@
 
 `readFile` uses `git show HEAD:<path>`, which returns the whole blob into memory. `git()` caps child-process output at 10 MB (`MAX_BUFFER`), so anything above that throws — fine. But a 9 MB binary returned to Claude still inflates context and can effectively DoS a session.
 
-**Fix:** After `readFile` returns, check `content.length` against a reasonable limit (e.g. 1 MB). On overflow, return a readable message pointing the caller at `dig_signatures`.
+**Fix:** After `readFile` returns, check `content.length` against a reasonable limit (e.g. 1 MB). On overflow, return a readable message pointing the caller at `dig_lookup`.
 
 ---
 

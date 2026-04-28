@@ -5,19 +5,36 @@ import { GitError, listFiles, readFile } from "./gitClient.js";
 
 const GENERATED_SUFFIXES = [".g.cs", ".generated.cs", ".Designer.cs"];
 const DOC_FILES = ["README.md", "CONVENTIONS.md", "ARCHITECTURE.md"];
-const SIGNATURE_HEADER_PREFIX = "// GENERATED — read only —";
-const SIGNATURE_HEADER_SUFFIX =
-  "// Do not edit. Re-generated automatically when source changes.";
 
 // ── Regex patterns ──
 
-const TYPE_KEYWORDS_RE = /\b(?:namespace|class|struct|interface|enum|record)\b/;
-const AUTO_PROP_RE =
-  /\{\s*(?:(?:(?:private|protected|internal|public)\s+)?(?:get|set|init)\s*;\s*)+\}/;
 const INTERFACE_RE =
   /\b(?:public|protected|internal)\b[^;]*\binterface\s+(\S+)/;
 const ABSTRACT_CLASS_RE =
   /\b(?:public|protected|internal)\b[^;]*\babstract\b[^;]*\bclass\s+(\S+)/;
+
+// Index extraction patterns (broader than scanForKeyTypes — captures all type kinds)
+const TYPE_DECL_RE =
+  /\b(?:public|protected|internal)\b[^;{]*\b(class|interface|struct|enum|record)\s+(\w+)/;
+const METHOD_DECL_RE =
+  /\b(?:public|protected|internal|override)\b[^;{]*?\b(\w+)\s*\(/;
+// Exclude these "method" matches — they're type keywords, not method names
+const NOT_METHOD = new Set([
+  "class", "interface", "struct", "enum", "record",
+  "namespace", "if", "else", "while", "for", "foreach",
+  "switch", "catch", "using", "delegate", "event", "new",
+  "return", "throw", "typeof", "sizeof", "nameof", "where",
+]);
+const VALID_KINDS = new Set(["class", "interface", "struct", "enum", "record", "method"]);
+
+// ── Public types ──
+
+export interface IndexEntry {
+  symbol: string;
+  kind: "class" | "interface" | "struct" | "enum" | "record" | "method";
+  parentType?: string;
+  filePath: string;
+}
 
 // ── Public API ──
 
@@ -105,15 +122,13 @@ export async function extractOverview(
 }
 
 /**
- * Generate stripped .cs signature files for a package.
- * Returns array of { filePath, content } sorted by path.
- * File paths are relative to the package directory.
+ * Build a symbol index for a package: all type and method declarations.
+ * Returns entries sorted by symbol name.
  */
-export async function extractSignatures(
+export async function extractIndex(
   repoDir: string,
   pkg: PackageConfig,
-  commitHash: string,
-): Promise<Array<{ filePath: string; content: string }>> {
+): Promise<IndexEntry[]> {
   const allFiles = await listFiles(repoDir, pkg.pathInRepo + "/");
   const csFiles = filterCsFiles(allFiles);
 
@@ -121,12 +136,7 @@ export async function extractSignatures(
     csFiles.map((p) => tryReadFile(repoDir, p)),
   );
 
-  const shortHash = commitHash.slice(0, 8);
-  const header =
-    `${SIGNATURE_HEADER_PREFIX} ${pkg.name} @ commit ${shortHash}\n` +
-    `${SIGNATURE_HEADER_SUFFIX}\n\n`;
-
-  const results: Array<{ filePath: string; content: string }> = [];
+  const entries: IndexEntry[] = [];
 
   for (let i = 0; i < csFiles.length; i++) {
     const source = contents[i];
@@ -134,189 +144,126 @@ export async function extractSignatures(
 
     const filePath = csFiles[i]!;
     const relPath = filePath.slice(pkg.pathInRepo.length + 1);
-    const stripped = stripCsBody(source);
 
-    results.push({ filePath: relPath, content: header + stripped });
+    entries.push(...scanFileForIndex(source, relPath));
   }
 
-  results.sort((a, b) => a.filePath.localeCompare(b.filePath));
-  return results;
+  entries.sort((a, b) => a.symbol.localeCompare(b.symbol));
+  return entries;
 }
 
-// ── Body stripping ──
+/**
+ * Serialize index entries to flat pipe-delimited format.
+ * Types: `symbol|kind|filePath`
+ * Methods: `symbol|method|parentType|filePath`
+ */
+export function serializeIndex(entries: IndexEntry[]): string {
+  return entries
+    .map((e) =>
+      e.kind === "method"
+        ? `${e.symbol}|method|${e.parentType}|${e.filePath}`
+        : `${e.symbol}|${e.kind}|${e.filePath}`,
+    )
+    .join("\n");
+}
 
 /**
- * Strip method and property bodies from C# source, keeping type declarations,
- * member signatures, XML doc comments, fields, constants, and attributes.
- * Method/constructor/property bodies are replaced with a placeholder comment block.
- *
- * Known limitations:
- * - Multi-line attribute arguments with braces may confuse the parser
- * - Verbatim strings (@"") and raw string literals are not fully handled
- * - Expression-bodied members (=>) pass through as-is (intentional — they're informative)
+ * Parse flat pipe-delimited index back into entries.
  */
-export function stripCsBody(source: string): string {
-  const lines = source.split("\n");
-  const result: string[] = [];
-
-  let depth = 0;
-  let inBlockComment = false;
-  let skipToDepth = -1; // -1 = not skipping
-  let declContext = ""; // accumulated declaration text for context detection
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const indent = line.substring(0, line.length - line.trimStart().length);
-
-    const analysis = analyzeLine(trimmed, inBlockComment);
-    inBlockComment = analysis.endsInComment;
-
-    if (skipToDepth >= 0) {
-      // Currently skipping a member body
-      depth += analysis.opens - analysis.closes;
-      if (depth <= skipToDepth) {
-        skipToDepth = -1;
+export function parseIndex(raw: string): IndexEntry[] {
+  if (!raw.trim()) return [];
+  return raw
+    .trim()
+    .split("\n")
+    .filter((line) => {
+      const kind = line.split("|")[1];
+      return kind !== undefined && VALID_KINDS.has(kind);
+    })
+    .map((line) => {
+      const parts = line.split("|");
+      if (parts[1] === "method") {
+        return {
+          symbol: parts[0]!,
+          kind: "method" as const,
+          parentType: parts[2]!,
+          filePath: parts[3]!,
+        };
       }
-      continue;
-    }
-
-    if (analysis.opens > 0 && analysis.closes >= analysis.opens) {
-      // Balanced braces on one line
-      if (isAutoProperty(trimmed)) {
-        result.push(line);
-      } else {
-        // Single-line body — replace with placeholder
-        const sigPart = trimmed
-          .substring(0, analysis.firstOpenIdx)
-          .trimEnd();
-        result.push(formatPlaceholder(indent, sigPart));
-      }
-      declContext = "";
-    } else if (analysis.opens > 0) {
-      // Opening brace(s) without matching close on same line
-      const textBeforeBrace = trimmed.substring(0, analysis.firstOpenIdx);
-      const fullContext = declContext + " " + textBeforeBrace;
-
-      if (isTypeDecl(fullContext)) {
-        // Type or namespace body — keep
-        result.push(line);
-        depth += analysis.opens - analysis.closes;
-      } else {
-        // Member body — skip
-        skipToDepth = depth;
-        depth += analysis.opens - analysis.closes;
-
-        result.push(formatPlaceholder(indent, textBeforeBrace.trimEnd()));
-      }
-      declContext = "";
-    } else if (analysis.closes > 0) {
-      // Only closing braces
-      depth += analysis.opens - analysis.closes;
-      result.push(line);
-      declContext = "";
-    } else {
-      // No braces — output line
-      result.push(line);
-
-      // Accumulate declaration context (skip comments and attributes)
-      if (
-        trimmed &&
-        !trimmed.startsWith("//") &&
-        !trimmed.startsWith("*") &&
-        !trimmed.startsWith("/*") &&
-        !trimmed.startsWith("[")
-      ) {
-        declContext += " " + trimmed;
-      } else if (trimmed === "") {
-        declContext = "";
-      }
-    }
-  }
-
-  return result.join("\n");
+      return {
+        symbol: parts[0]!,
+        kind: parts[1] as IndexEntry["kind"],
+        filePath: parts[2]!,
+      };
+    });
 }
 
 // ── Internal helpers ──
 
-interface LineAnalysis {
-  opens: number;
-  closes: number;
-  firstOpenIdx: number; // -1 if no structural open brace
-  endsInComment: boolean;
-}
+function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
+  const lines = source.split("\n");
+  const entries: IndexEntry[] = [];
+  const typeStack: string[] = [];
+  let depth = 0;
+  const typeDepths: number[] = [];
+  let pendingType: string | null = null;
 
-/** Count structural braces on a line, ignoring those in strings/comments. */
-function analyzeLine(
-  line: string,
-  startsInBlockComment: boolean,
-): LineAnalysis {
-  let opens = 0;
-  let closes = 0;
-  let firstOpenIdx = -1;
-  let inBC = startsInBlockComment;
-  let inStr = false;
-  let inChar = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) {
+      continue;
+    }
 
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]!;
-    const next = i + 1 < line.length ? line[i + 1] : "";
+    const opens = countChar(trimmed, "{");
+    const closes = countChar(trimmed, "}");
 
-    if (inBC) {
-      if (ch === "*" && next === "/") {
-        inBC = false;
-        i++;
+    const typeMatch = TYPE_DECL_RE.exec(trimmed);
+    if (typeMatch) {
+      const typeKind = typeMatch[1] as IndexEntry["kind"];
+      const name = typeMatch[2]!;
+      entries.push({ symbol: name, kind: typeKind, filePath: relPath });
+      if (opens > closes) {
+        typeStack.push(name);
+        typeDepths.push(depth + opens);
+      } else if (opens === 0) {
+        // Allman style: opening brace comes on the next line
+        pendingType = name;
       }
-      continue;
-    }
-    if (inStr) {
-      if (ch === "\\") {
-        i++;
-        continue;
+    } else if (pendingType && opens > closes) {
+      typeStack.push(pendingType);
+      typeDepths.push(depth + opens);
+      pendingType = null;
+    } else {
+      pendingType = null;
+      if (typeStack.length > 0) {
+        const methodMatch = METHOD_DECL_RE.exec(trimmed);
+        if (methodMatch && !NOT_METHOD.has(methodMatch[1]!)) {
+          entries.push({
+            symbol: methodMatch[1]!,
+            kind: "method",
+            parentType: typeStack[typeStack.length - 1],
+            filePath: relPath,
+          });
+        }
       }
-      if (ch === '"') inStr = false;
-      continue;
-    }
-    if (inChar) {
-      if (ch === "\\") {
-        i++;
-        continue;
-      }
-      if (ch === "'") inChar = false;
-      continue;
     }
 
-    if (ch === "/" && next === "/") break;
-    if (ch === "/" && next === "*") {
-      inBC = true;
-      i++;
-      continue;
-    }
-    if (ch === '"') {
-      inStr = true;
-      continue;
-    }
-    if (ch === "'") {
-      inChar = true;
-      continue;
-    }
+    depth += opens - closes;
 
-    if (ch === "{") {
-      if (firstOpenIdx < 0) firstOpenIdx = i;
-      opens++;
-    } else if (ch === "}") {
-      closes++;
+    while (typeDepths.length > 0 && depth < typeDepths[typeDepths.length - 1]!) {
+      typeStack.pop();
+      typeDepths.pop();
     }
   }
 
-  return { opens, closes, firstOpenIdx, endsInComment: inBC };
+  return entries;
 }
 
-function isTypeDecl(context: string): boolean {
-  return TYPE_KEYWORDS_RE.test(context);
-}
-
-function isAutoProperty(line: string): boolean {
-  return AUTO_PROP_RE.test(line);
+function countChar(s: string, ch: string): number {
+  let count = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === ch) count++;
+  }
+  return count;
 }
 
 function filterCsFiles(files: string[]): string[] {
@@ -325,12 +272,6 @@ function filterCsFiles(files: string[]): string[] {
 
 function isGenerated(filePath: string): boolean {
   return GENERATED_SUFFIXES.some((s) => filePath.endsWith(s));
-}
-
-function formatPlaceholder(indent: string, sigPart: string): string {
-  return sigPart
-    ? `${indent}${sigPart} { /* ... */ }`
-    : `${indent}{ /* ... */ }`;
 }
 
 async function tryReadFile(

@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   isFresh,
   markFresh,
-  readSignatures,
-  writeSignature,
+  readIndex,
+  writeIndex,
 } from "../cacheManager.js";
 import {
   getHeadHash,
@@ -17,7 +17,7 @@ import {
   makeRepoConfig,
   makeWildcardRepo,
 } from "../testHelpers.js";
-import { digSignatures } from "./digSignatures.js";
+import { digLookup } from "./digLookup.js";
 
 // ── Test helpers ──
 
@@ -25,7 +25,7 @@ let tmpDir: string;
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), "mcp-digger-dig-signatures-"),
+    path.join(os.tmpdir(), "mcp-digger-dig-lookup-"),
   );
 });
 
@@ -35,17 +35,15 @@ afterEach(() => {
 
 // ── Basic functionality ──
 
-describe("digSignatures", () => {
-  it("generates signatures for a package", async () => {
+describe("digLookup", () => {
+  it("finds a type by name", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/IService.cs": [
         "namespace MyLib;",
-        "/// <summary>Core service.</summary>",
         "public interface IService",
         "{",
         "    void Execute();",
-        "    string GetName(int id);",
         "}",
       ].join("\n"),
     });
@@ -54,17 +52,61 @@ describe("digSignatures", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const full = await digSignatures(config, "MyLib");
-    const result = full.text;
+    const result = await digLookup(config, "MyLib", "IService");
 
-    expect(full.isError).toBe(false);
-    expect(result).toContain("# MyLib — Signatures");
-    expect(result).toContain("IService.cs");
-    expect(result).toContain("```csharp");
-    expect(result).toContain("IService");
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("IService");
+    expect(result.text).toContain("interface");
+    expect(result.text).toContain("IService.cs");
   });
 
-  it("returns cached signatures without regenerating", async () => {
+  it("finds a method by name", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/Service.cs": [
+        "namespace MyLib;",
+        "public class OrderService",
+        "{",
+        "    public void CreateOrder(int id)",
+        "    {",
+        "        // body",
+        "    }",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "MyLib", "CreateOrder");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("CreateOrder");
+    expect(result.text).toContain("method on OrderService");
+    expect(result.text).toContain("Service.cs");
+  });
+
+  it("performs case-insensitive search", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/IService.cs": [
+        "namespace MyLib;",
+        "public interface IService { }",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "MyLib", "iservice");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("IService");
+  });
+
+  it("returns cached index without regenerating", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/Dummy.cs": "namespace MyLib; public class Dummy { }",
@@ -75,12 +117,14 @@ describe("digSignatures", () => {
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     // Pre-populate cache and mark fresh
-    await writeSignature(pkg, "Dummy.cs", "// cached signature content");
+    await writeIndex(pkg, "CachedType|class|Cached.cs");
     await markFresh(cacheDir, "myrepo", await getHeadHash(repoDir));
 
-    const { text: result } = await digSignatures(config, "MyLib");
+    const result = await digLookup(config, "MyLib", "CachedType");
 
-    expect(result).toContain("cached signature content");
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("CachedType");
+    expect(result.text).toContain("Cached.cs");
   });
 
   it("regenerates when commit hash changes", async () => {
@@ -100,23 +144,40 @@ describe("digSignatures", () => {
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     // Pre-populate cache with stale data at an old hash
-    await writeSignature(pkg, "Old.cs", "// stale content");
+    await writeIndex(pkg, "StaleType|class|Stale.cs");
     await markFresh(
       cacheDir,
       "myrepo",
       "0000000000000000000000000000000000000000",
     );
 
-    const { text: result } = await digSignatures(config, "MyLib");
+    const result = await digLookup(config, "MyLib", "IFoo");
 
-    // Should have regenerated from actual repo
-    expect(result).toContain("IFoo");
-    expect(result).not.toContain("stale content");
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("IFoo");
+    expect(result.text).not.toContain("StaleType");
 
     // Cache should now be fresh
     expect(
       await isFresh(cacheDir, "myrepo", await getHeadHash(repoDir)),
     ).toBe(true);
+  });
+
+  it("returns no-matches message when keyword not found", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/Service.cs": "namespace MyLib;\npublic class Service { }",
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "MyLib", "NonExistentThing");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("No matches");
+    expect(result.text).toContain("NonExistentThing");
   });
 });
 
@@ -133,21 +194,21 @@ describe("unknown package", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const full = await digSignatures(config, "NonExistent");
+    const result = await digLookup(config, "NonExistent", "anything");
 
-    expect(full.isError).toBe(true);
-    expect(full.text).toContain("Unknown package 'NonExistent'");
-    expect(full.text).toContain("Alpha");
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("Unknown package 'NonExistent'");
+    expect(result.text).toContain("Alpha");
   });
 
   it("returns message when no packages configured", async () => {
     const config = makeConfig([], tmpDir);
 
-    const full = await digSignatures(config, "Anything");
+    const result = await digLookup(config, "Anything", "keyword");
 
-    expect(full.isError).toBe(true);
-    expect(full.text).toContain("Unknown package 'Anything'");
-    expect(full.text).toContain("No packages are configured");
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("Unknown package 'Anything'");
+    expect(result.text).toContain("No packages are configured");
   });
 
   it("hints to run dig_list when a wildcard repo is unresolved", async () => {
@@ -156,12 +217,12 @@ describe("unknown package", () => {
     const wildcard = makeWildcardRepo("MyCompany.Libs", tmpDir, { packageFilter: "MyCompany.*", localPath: repoDir });
     const config = makeConfig([wildcard], tmpDir, cacheDir);
 
-    const full = await digSignatures(config, "MyCompany.Core");
+    const result = await digLookup(config, "MyCompany.Core", "anything");
 
-    expect(full.isError).toBe(true);
-    expect(full.text).toContain("Unknown package 'MyCompany.Core'");
-    expect(full.text).toMatch(/filtered repo.*'MyCompany\.Libs'.*have not resolved/i);
-    expect(full.text).toContain("dig_list");
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("Unknown package 'MyCompany.Core'");
+    expect(result.text).toMatch(/filtered repo.*'MyCompany\.Libs'.*have not resolved/i);
+    expect(result.text).toContain("dig_list");
   });
 });
 
@@ -181,19 +242,19 @@ describe("error handling", () => {
     );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const full = await digSignatures(config, "Missing");
+    const result = await digLookup(config, "Missing", "anything");
 
-    expect(full.isError).toBe(true);
-    expect(full.text).toContain("Missing");
-    expect(full.text).toContain("Source unavailable");
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("Missing");
+    expect(result.text).toContain("Source unavailable");
   });
 
   it("returns stale cache when repo becomes unreachable", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const pkg = makePkg("StaleLib", "gonerepo", "src", cacheDir);
 
-    // Pre-populate cache with stale signatures
-    await writeSignature(pkg, "Old.cs", "// old but useful");
+    // Pre-populate cache with stale index
+    await writeIndex(pkg, "OldType|class|Old.cs");
 
     const repo = makeRepoConfig(
       {
@@ -205,12 +266,12 @@ describe("error handling", () => {
     );
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const full = await digSignatures(config, "StaleLib");
+    const result = await digLookup(config, "StaleLib", "OldType");
 
-    expect(full.isError).toBe(false);
-    expect(full.text).toContain("old but useful");
-    expect(full.text).toContain("Warning");
-    expect(full.text).toContain("stale");
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("OldType");
+    expect(result.text).toContain("Warning");
+    expect(result.text).toContain("stale");
   });
 });
 
@@ -227,10 +288,11 @@ describe("empty package", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    const { text: result } = await digSignatures(config, "EmptyLib");
+    const result = await digLookup(config, "EmptyLib", "anything");
 
-    expect(result).toContain("EmptyLib");
-    expect(result).toContain("No .cs source files found");
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("EmptyLib");
+    expect(result.text).toContain("No .cs source files found");
   });
 });
 
@@ -253,14 +315,14 @@ describe("cache freshness lifecycle", () => {
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
     const config = makeConfig([repo], tmpDir, cacheDir);
 
-    await digSignatures(config, "MyLib");
+    await digLookup(config, "MyLib", "X");
 
     expect(
       await isFresh(cacheDir, "myrepo", await getHeadHash(repoDir)),
     ).toBe(true);
 
-    const cached = await readSignatures(pkg);
-    expect(cached.length).toBeGreaterThan(0);
-    expect(cached[0]!.content).toContain("MyLib");
+    const cached = await readIndex(pkg);
+    expect(cached).toBeDefined();
+    expect(cached).toContain("X|class");
   });
 });

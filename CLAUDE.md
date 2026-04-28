@@ -1,6 +1,6 @@
 # mcp-digger
 
-Node.js/TypeScript MCP server that gives Claude Code progressive access to internal .NET NuGet shared library source. One health-check tool (`dig_status`) plus three dig levels: overview (markdown summary), signatures (stripped .cs — public API only), file (full source). Claude decides when to escalate based on tool descriptions.
+Node.js/TypeScript MCP server that gives Claude Code progressive access to internal .NET NuGet shared library source. One health-check tool (`dig_status`), a discovery tool (`dig_list`), and three dig levels: overview (markdown summary), lookup (symbol-to-file search), file (full source). Claude decides when to escalate based on tool descriptions.
 
 ## Claude Rules
 
@@ -30,14 +30,15 @@ src/
   config.ts             ← .digger/config.json parsing, env var merging, validation
   gitClient.ts          ← git CLI via child_process.execFile (clone, fetch, revParse, readFile, listFiles)
   repoManager.ts        ← Mode A (managed clone) / Mode B (local repo) logic, ensureReady()
-  cacheManager.ts       ← per-repo meta.json freshness, overview + signatures cache read/write
-  sourceExtractor.ts    ← overview markdown generation, .cs signature stripping (stripCsBody)
+  cacheManager.ts       ← per-repo meta.json freshness, overview + index cache read/write
+  sourceExtractor.ts    ← overview markdown generation, symbol index extraction
   logger.ts             ← debug logging singleton (two-phase init with pre-init buffering)
   testHelpers.ts        ← shared test utilities
   tools/
     digStatus.ts        ← Health check: config summary + lsRemote connectivity per repo
-    digOverview.ts      ← Level 1: markdown overview of all packages
-    digSignatures.ts    ← Level 2: stripped .cs public signatures for one package
+    digList.ts          ← Discovery: available repos and their package names
+    digOverview.ts      ← Level 1: markdown overview of all packages in a repo
+    digLookup.ts        ← Level 2: keyword search over type/method index → matching file paths
     digFile.ts          ← Level 3: full source of a single file
 ```
 

@@ -7,10 +7,10 @@ import {
   invalidate,
   isFresh,
   markFresh,
+  readIndex,
   readOverview,
-  readSignatures,
+  writeIndex,
   writeOverview,
-  writeSignature,
 } from "./cacheManager.js";
 
 // ── Test helpers ──
@@ -171,51 +171,42 @@ describe("writeOverview / readOverview", () => {
   });
 });
 
-// ── writeSignature / readSignatures ──
+// ── writeIndex / readIndex ──
 
-describe("writeSignature / readSignatures", () => {
-  it("round-trips a single signature file", async () => {
+describe("writeIndex / readIndex", () => {
+  it("round-trips index content", async () => {
     const pkg = makePkg("MyLib");
+    const content = "FooService|class|Services/FooService.cs\nIFoo|interface|IFoo.cs";
 
-    await writeSignature(pkg, "src/MyLib/IService.cs", "public interface IService { }");
-    const sigs = await readSignatures(pkg);
+    await writeIndex(pkg, content);
+    const result = await readIndex(pkg);
 
-    expect(sigs).toHaveLength(1);
-    expect(sigs[0]!.filePath).toBe("src/MyLib/IService.cs");
-    expect(sigs[0]!.content).toBe("public interface IService { }");
+    expect(result).toBe(content);
   });
 
-  it("handles multiple files in nested directories", async () => {
-    const pkg = makePkg("MyLib");
-
-    await writeSignature(pkg, "src/MyLib/Models/User.cs", "public class User { }");
-    await writeSignature(pkg, "src/MyLib/Services/Auth.cs", "public class Auth { }");
-    await writeSignature(pkg, "src/MyLib/ICore.cs", "public interface ICore { }");
-
-    const sigs = await readSignatures(pkg);
-
-    expect(sigs).toHaveLength(3);
-    // Sorted by path
-    expect(sigs[0]!.filePath).toBe("src/MyLib/ICore.cs");
-    expect(sigs[1]!.filePath).toBe("src/MyLib/Models/User.cs");
-    expect(sigs[2]!.filePath).toBe("src/MyLib/Services/Auth.cs");
-  });
-
-  it("returns empty array when no signatures cached", async () => {
+  it("returns undefined when no index cached", async () => {
     const pkg = makePkg("NoPkg");
 
-    expect(await readSignatures(pkg)).toEqual([]);
+    expect(await readIndex(pkg)).toBeUndefined();
   });
 
-  it("overwrites existing signature", async () => {
+  it("overwrites existing index", async () => {
     const pkg = makePkg("MyLib");
 
-    await writeSignature(pkg, "src/MyLib/A.cs", "v1");
-    await writeSignature(pkg, "src/MyLib/A.cs", "v2");
+    await writeIndex(pkg, "old");
+    await writeIndex(pkg, "new");
 
-    const sigs = await readSignatures(pkg);
-    expect(sigs).toHaveLength(1);
-    expect(sigs[0]!.content).toBe("v2");
+    expect(await readIndex(pkg)).toBe("new");
+  });
+
+  it("leaves no .tmp file after writing", async () => {
+    const pkg = makePkg("MyLib");
+
+    await writeIndex(pkg, "content");
+
+    const files = fs.readdirSync(pkg.cachePath);
+    expect(files.some((f) => f.endsWith(".tmp"))).toBe(false);
+    expect(files).toContain("index.dat");
   });
 });
 
@@ -232,11 +223,11 @@ describe("full cache cycle", () => {
 
     // Write cached content
     await writeOverview(pkg, "# Overview");
-    await writeSignature(pkg, "src/MyLib/A.cs", "stripped");
+    await writeIndex(pkg, "FooService|class|Foo.cs");
 
     // Content is readable
     expect(await readOverview(pkg)).toBe("# Overview");
-    expect(await readSignatures(pkg)).toHaveLength(1);
+    expect(await readIndex(pkg)).toBe("FooService|class|Foo.cs");
 
     // Invalidate
     await invalidate(cacheDir, "myrepo", [pkg]);
@@ -244,7 +235,7 @@ describe("full cache cycle", () => {
     // Now stale and empty
     expect(await isFresh(cacheDir, "myrepo", hash)).toBe(false);
     expect(await readOverview(pkg)).toBeUndefined();
-    expect(await readSignatures(pkg)).toEqual([]);
+    expect(await readIndex(pkg)).toBeUndefined();
   });
 });
 

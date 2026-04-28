@@ -9,7 +9,7 @@ import { ensureAllReady } from "../repoManager.js";
 const DESCRIPTION = `Lists all configured repositories and their resolved package names.
 Call this first to discover what internal NuGet packages are available before
 digging into any specific repo or package. Use the repo names with dig_overview,
-and the package names with dig_signatures or dig_file.`;
+and the package names with dig_lookup or dig_file.`;
 
 // ── Public API ──
 

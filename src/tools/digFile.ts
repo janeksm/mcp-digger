@@ -14,9 +14,9 @@ import { ensureReady } from "../repoManager.js";
 const DESCRIPTION = `Digs to the deepest level — full source of a single file from an internal package.
 Call this only when you need to understand the actual implementation — for example
 to trace specific behaviour, understand a complex algorithm, or debug an unexpected
-result. Provide both package name and file path (relative path as listed by
-dig_signatures). Avoid calling this speculatively — prefer dig_signatures
-unless implementation detail of a specific file is needed.`;
+result. Provide both package name and file path (relative path as shown by
+dig_lookup or dig_overview). Avoid calling this speculatively — prefer dig_lookup
+to find the right file first, then dig_file only for the specific file you need.`;
 
 // ── Public API ──
 
@@ -31,7 +31,7 @@ export function registerDigFile(
       description: DESCRIPTION,
       inputSchema: {
         packageName: PACKAGE_NAME_PARAM,
-        filePath: z.string().describe("File path relative to the package root, as listed by dig_signatures (e.g. 'Services/FooService.cs')"),
+        filePath: z.string().describe("File path relative to the package root, as shown by dig_lookup or dig_overview (e.g. 'Services/FooService.cs')"),
       },
       annotations: TOOL_ANNOTATIONS,
     },
@@ -65,7 +65,7 @@ export async function digFile(
       try {
         const content = await readFile(result.sourcePath, fullPath);
         if (content.length > FILE_CHAR_LIMIT) {
-          return toolError(`# ${packageName} — ${filePath}\n\nFile too large (${content.length.toLocaleString()} chars, limit ${FILE_CHAR_LIMIT.toLocaleString()}). Use dig_signatures for the public API, or view this file in your editor.`);
+          return toolError(`# ${packageName} — ${filePath}\n\nFile too large (${content.length.toLocaleString()} chars, limit ${FILE_CHAR_LIMIT.toLocaleString()}). Use dig_lookup to find specific types or methods, or view this file in your editor.`);
         }
         return toolSuccess(formatFile(packageName, filePath, content));
       } catch (err) {

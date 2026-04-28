@@ -7,8 +7,8 @@ import { loadConfig } from "./config.js";
 import { debug, error, initLogger } from "./logger.js";
 import { registerDigFile } from "./tools/digFile.js";
 import { registerDigList } from "./tools/digList.js";
+import { registerDigLookup } from "./tools/digLookup.js";
 import { registerDigOverview } from "./tools/digOverview.js";
-import { registerDigSignatures } from "./tools/digSignatures.js";
 import { registerDigStatus } from "./tools/digStatus.js";
 
 const require = createRequire(import.meta.url);
@@ -26,8 +26,8 @@ try {
   debug("index", "mcp-digger starting");
 
   registerDigList(server, config);
+  registerDigLookup(server, config);
   registerDigOverview(server, config);
-  registerDigSignatures(server, config);
   registerDigFile(server, config);
   registerDigStatus(server, config);
 

@@ -4,13 +4,14 @@ MCP server that gives Claude Code progressive, on-demand access to internal .NET
 
 ## How It Works
 
-Four MCP tools. One for diagnosing setup, three for escalating detail as needed:
+Five MCP tools. One for diagnosing setup, one for discovery, three for escalating detail as needed:
 
 | Tool | What it returns | Token cost |
 |------|----------------|------------|
 | `dig_status` | Health check — validates config and tests git connectivity for every configured repo | Very low |
-| `dig_overview` | Markdown summary of all packages: purpose, key types, conventions | Low |
-| `dig_signatures` | Stripped `.cs` files: public signatures + XML docs, bodies removed | Medium |
+| `dig_list` | Lists all configured repos and their resolved package names | Very low |
+| `dig_overview` | Markdown summary of all packages in a repo: purpose, key types, conventions | Low |
+| `dig_lookup` | Searches a package's type/method index by keyword, returns matching file paths | Low |
 | `dig_file` | Full source of a single file | High |
 
 Claude Code decides when to escalate based on the tool descriptions — no manual intervention needed. Call `dig_status` first when something looks off (auth error, stale data) to see exactly what the server sees.
@@ -77,8 +78,9 @@ Create `.mcp.json` in your .NET solution root:
 This project uses internal NuGet packages. Use mcp-digger tools to understand them:
 
 - **`dig_status`** — run first if anything looks broken (auth errors, missing packages)
-- **`dig_overview`** — call first for any task involving shared libraries
-- **`dig_signatures`** — when you need exact type or method signatures
+- **`dig_list`** — discover available repos and packages
+- **`dig_overview`** — call for any task involving shared libraries to understand what's there
+- **`dig_lookup`** — when you need to find which file contains a specific type or method
 - **`dig_file`** — only when you need implementation detail of a specific file
 
 Do not modify anything under `.digger/source/` or `.digger/cache/`.
@@ -119,8 +121,8 @@ With the `.mcp/mcp-config.json` shown in Quick Start, just open Claude Code in y
 
 1. Open Claude Code in the .NET solution directory
 2. Ask Claude: *"Run dig_status and show me what's configured"* — confirms the server is wired up and repos are reachable
-3. Ask a follow-up like: *"What shared internal packages are available?"* — Claude should call `dig_overview`
-4. Ask: *"Show me the signatures for MyCompany.Core"* — Claude should call `dig_signatures`
+3. Ask a follow-up like: *"What shared internal packages are available?"* — Claude should call `dig_list` then `dig_overview`
+4. Ask: *"Where is the IOrderService interface defined?"* — Claude should call `dig_lookup`
 
 ### Debug logging
 
@@ -140,24 +142,26 @@ Per repo:
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `name` | Yes | — | Repo label, used as clone dir name. A trailing `*` enables [wildcard mode](#wildcard-repo-names) |
+| `name` | Yes | — | Repo label, used as clone dir name. Must be a plain identifier (no `*`) |
 | `url` | No | — | Git clone URL (required unless the repo has a `localRepos` entry) |
 | `sourceRoot` | No | `"src"` | Relative path where package dirs live |
-| `packages` | No | auto-discover | Explicit list of package names. Omit or leave empty to auto-discover every non-test `.csproj` in the repo. Mutually exclusive with wildcard `name` |
+| `packages` | No | auto-discover | Explicit list of package names. Omit or leave empty to auto-discover every non-test `.csproj` in the repo. Mutually exclusive with `packageFilter` |
+| `packageFilter` | No | — | Wildcard filter (e.g. `"BSF.*"`) — narrows packages to those referenced by the workspace and matching the prefix. See [Package filtering](#package-filtering). Mutually exclusive with `packages` |
 | `auth` | No | `{ strategy: "auto" }` | Git auth — see [Auth](#auth) below |
 
-When `packages` is omitted (or set to `[]`), mcp-digger scans the repo for directories containing a matching `.csproj` file (excluding `.Tests`, `.Specs`, `.Benchmarks`, `.IntegrationTests`).
+When `packages` is omitted (or set to `[]`) and no `packageFilter` is set, mcp-digger scans the repo for directories containing a matching `.csproj` file (excluding `.Tests`, `.Specs`, `.Benchmarks`, `.IntegrationTests`).
 
-### Wildcard repo names
+### Package filtering
 
-Large internal mono-repos often contain dozens of packages, most of which a given consuming solution doesn't reference. Listing them explicitly is tedious; auto-discovering everything inflates context. A trailing `*` in the repo `name` activates **wildcard mode**, which narrows the package list to what's actually referenced by your .NET solution.
+Large internal mono-repos often contain dozens of packages, most of which a given consuming solution doesn't reference. Listing them explicitly is tedious; auto-discovering everything inflates context. The `packageFilter` field narrows the package list to what's actually referenced by your .NET solution.
 
 ```json
 {
   "repos": [
     {
-      "name": "MyCompany.*",
+      "name": "my-shared-libs",
       "url": "https://gitlab.company.com/shared/libs.git",
+      "packageFilter": "MyCompany.*",
       "auth": { "strategy": "pat", "PAT-EnvVarName": "COMPANY_GITLAB_PAT" }
     }
   ]
@@ -167,13 +171,13 @@ Large internal mono-repos often contain dozens of packages, most of which a give
 **How it works** — the exposed package list is the intersection of three sets:
 
 1. **Referenced** — package names collected by recursively scanning the workspace for `*.sln`, `*.slnx`, `<PackageReference>` inside `.csproj` files, and `<PackageVersion>` / `<PackageReference>` inside `Directory.Packages.props`, `Directory.Build.props`, and `Directory.Build.targets`. Dirs `.git`, `.digger`, `node_modules`, `bin`, `obj`, `.vs`, `.idea`, and `packages` are skipped.
-2. **Matching the prefix** — only names that start with the repo-name prefix (everything before `*`). For `"MyCompany.*"` the prefix is `MyCompany.`.
+2. **Matching the prefix** — only names that start with the filter prefix (everything before `*`). For `"MyCompany.*"` the prefix is `MyCompany.`.
 3. **Present in the repo** — only packages that actually exist as non-test `.csproj` directories in the shared-libs repo.
 
 **Rules**:
-- `*` is allowed only as a trailing character. `"MyCom*any"` is rejected.
-- Wildcard repos cannot have an explicit `packages` list — the two are mutually exclusive.
-- The clone directory name strips the trailing `*` and any trailing dots: `"MyCompany.*"` → `.digger/source/MyCompany`.
+- `packageFilter` must end with `*` and the prefix (part before `*`) must be non-empty and contain only safe characters (`A-Za-z0-9._-`).
+- `packageFilter` and `packages` are mutually exclusive — you cannot specify both.
+- `*` is not allowed in the repo `name` — names are plain identifiers.
 
 **Cache file** — every scan writes its full result to `.digger/cache/solution-scan.json`. Inspect it when diagnosing matches; it lists the solution/props/targets files found, the resolved `.csproj` set, and the deduped package list.
 
