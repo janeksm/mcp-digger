@@ -9,6 +9,7 @@ import { registerDigFile } from "./tools/digFile.js";
 import { registerDigList } from "./tools/digList.js";
 import { registerDigLookup } from "./tools/digLookup.js";
 import { registerDigOverview } from "./tools/digOverview.js";
+import { registerDigSignatures } from "./tools/digSignatures.js";
 import { registerDigStatus } from "./tools/digStatus.js";
 
 const require = createRequire(import.meta.url);
@@ -27,6 +28,7 @@ try {
 
   registerDigList(server, config);
   registerDigLookup(server, config);
+  registerDigSignatures(server, config);
   registerDigOverview(server, config);
   registerDigFile(server, config);
   registerDigStatus(server, config);

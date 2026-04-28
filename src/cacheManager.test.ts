@@ -9,8 +9,10 @@ import {
   markFresh,
   readIndex,
   readOverview,
+  readSignatures,
   writeIndex,
   writeOverview,
+  writeSignature,
 } from "./cacheManager.js";
 
 // ── Test helpers ──
@@ -168,6 +170,53 @@ describe("writeOverview / readOverview", () => {
     await writeOverview(pkg, "new");
 
     expect(await readOverview(pkg)).toBe("new");
+  });
+});
+
+// ── writeSignature / readSignatures ──
+
+describe("writeSignature / readSignatures", () => {
+  it("round-trips a single signature file", async () => {
+    const pkg = makePkg("MyLib");
+
+    await writeSignature(pkg, "src/MyLib/IService.cs", "public interface IService { }");
+    const sigs = await readSignatures(pkg);
+
+    expect(sigs).toHaveLength(1);
+    expect(sigs[0]!.filePath).toBe("src/MyLib/IService.cs");
+    expect(sigs[0]!.content).toBe("public interface IService { }");
+  });
+
+  it("handles multiple files in nested directories", async () => {
+    const pkg = makePkg("MyLib");
+
+    await writeSignature(pkg, "src/MyLib/Models/User.cs", "public class User { }");
+    await writeSignature(pkg, "src/MyLib/Services/Auth.cs", "public class Auth { }");
+    await writeSignature(pkg, "src/MyLib/ICore.cs", "public interface ICore { }");
+
+    const sigs = await readSignatures(pkg);
+
+    expect(sigs).toHaveLength(3);
+    expect(sigs[0]!.filePath).toBe("src/MyLib/ICore.cs");
+    expect(sigs[1]!.filePath).toBe("src/MyLib/Models/User.cs");
+    expect(sigs[2]!.filePath).toBe("src/MyLib/Services/Auth.cs");
+  });
+
+  it("returns empty array when no signatures cached", async () => {
+    const pkg = makePkg("NoPkg");
+
+    expect(await readSignatures(pkg)).toEqual([]);
+  });
+
+  it("overwrites existing signature", async () => {
+    const pkg = makePkg("MyLib");
+
+    await writeSignature(pkg, "src/MyLib/A.cs", "v1");
+    await writeSignature(pkg, "src/MyLib/A.cs", "v2");
+
+    const sigs = await readSignatures(pkg);
+    expect(sigs).toHaveLength(1);
+    expect(sigs[0]!.content).toBe("v2");
   });
 });
 

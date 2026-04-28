@@ -1,6 +1,6 @@
 # mcp-digger — MCP Design
 
-> MCP server exposing five tools over stdio transport. Claude Code discovers tools via their descriptions and decides when to call each one.
+> MCP server exposing six tools over stdio transport. Claude Code discovers tools via their descriptions and decides when to call each one.
 
 ## Server
 
@@ -60,6 +60,18 @@
 
 **Output:** Markdown listing matching symbols (type name, kind, file path). Index cached per package as flat pipe-delimited file (`index.dat`), invalidated by commit hash.
 
+### `dig_signatures` — Level 2: Stripped Signatures
+
+| Field | Value |
+|-------|-------|
+| File | `src/tools/digSignatures.ts` |
+| Input | `packageName: string` — Exact name of the internal NuGet package (e.g. 'MyCompany.Core') |
+| Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
+
+**Purpose:** Returns stripped C# source files for a package — public type declarations, method signatures, property definitions, and XML doc comments. Method bodies are replaced with a placeholder. Call when you need exact method overloads, generic constraints, interface members, or return types.
+
+**Output:** Markdown with fenced C# code blocks per file. Each file has a generated header with package name and commit hash. Cached per-file under `signatures/` directory, invalidated by commit hash.
+
 ### `dig_file` — Level 3: Full Source
 
 | Field | Value |
@@ -77,8 +89,10 @@
 Claude Code follows a progressive disclosure pattern — escalating detail only as needed:
 
 ```
-dig_status  →  dig_list  →  dig_overview(repo)  →  dig_lookup(pkg, keyword)  →  dig_file(pkg, file)
-(health)       (discover)   (what exists)           (find symbol → file)        (implementation)
+dig_status  →  dig_list  →  dig_overview(repo)  →  dig_lookup(pkg, keyword)   →  dig_file(pkg, file)
+(health)       (discover)   (what exists)           (find symbol → file)          (implementation)
+                                                 →  dig_signatures(pkg)
+                                                    (all public API signatures)
 ```
 
 Each tool's description guides Claude on when to escalate to the next level.

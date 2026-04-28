@@ -4,7 +4,7 @@ MCP server that gives Claude Code progressive, on-demand access to internal .NET
 
 ## How It Works
 
-Five MCP tools. One for diagnosing setup, one for discovery, three for escalating detail as needed:
+Six MCP tools. One for diagnosing setup, one for discovery, four for escalating detail as needed:
 
 | Tool | What it returns | Token cost |
 |------|----------------|------------|
@@ -12,6 +12,7 @@ Five MCP tools. One for diagnosing setup, one for discovery, three for escalatin
 | `dig_list` | Lists all configured repos and their resolved package names | Very low |
 | `dig_overview` | Markdown summary of all packages in a repo: purpose, key types, conventions | Low |
 | `dig_lookup` | Searches a package's type/method index by keyword, returns matching file paths | Low |
+| `dig_signatures` | Stripped C# signatures for a package: type declarations, method signatures, XML docs | Medium |
 | `dig_file` | Full source of a single file | High |
 
 Claude Code decides when to escalate based on the tool descriptions — no manual intervention needed. Call `dig_status` first when something looks off (auth error, stale data) to see exactly what the server sees.
@@ -81,6 +82,7 @@ This project uses internal NuGet packages. Use mcp-digger tools to understand th
 - **`dig_list`** — discover available repos and packages
 - **`dig_overview`** — call for any task involving shared libraries to understand what's there
 - **`dig_lookup`** — when you need to find which file contains a specific type or method
+- **`dig_signatures`** — when you need exact method overloads, generic constraints, or interface members
 - **`dig_file`** — only when you need implementation detail of a specific file
 
 Do not modify anything under `.digger/source/` or `.digger/cache/`.

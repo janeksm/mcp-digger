@@ -5,9 +5,15 @@ import { GitError, listFiles, readFile } from "./gitClient.js";
 
 const GENERATED_SUFFIXES = [".g.cs", ".generated.cs", ".Designer.cs"];
 const DOC_FILES = ["README.md", "CONVENTIONS.md", "ARCHITECTURE.md"];
+const SIGNATURE_HEADER_PREFIX = "// GENERATED — read only —";
+const SIGNATURE_HEADER_SUFFIX =
+  "// Do not edit. Re-generated automatically when source changes.";
 
 // ── Regex patterns ──
 
+const TYPE_KEYWORDS_RE = /\b(?:namespace|class|struct|interface|enum|record)\b/;
+const AUTO_PROP_RE =
+  /\{\s*(?:(?:(?:private|protected|internal|public)\s+)?(?:get|set|init)\s*;\s*)+\}/;
 const INTERFACE_RE =
   /\b(?:public|protected|internal)\b[^;]*\binterface\s+(\S+)/;
 const ABSTRACT_CLASS_RE =
@@ -122,6 +128,45 @@ export async function extractOverview(
 }
 
 /**
+ * Generate stripped .cs signature files for a package.
+ * Returns array of { filePath, content } sorted by path.
+ * File paths are relative to the package directory.
+ */
+export async function extractSignatures(
+  repoDir: string,
+  pkg: PackageConfig,
+  commitHash: string,
+): Promise<Array<{ filePath: string; content: string }>> {
+  const allFiles = await listFiles(repoDir, pkg.pathInRepo + "/");
+  const csFiles = filterCsFiles(allFiles);
+
+  const contents = await Promise.all(
+    csFiles.map((p) => tryReadFile(repoDir, p)),
+  );
+
+  const shortHash = commitHash.slice(0, 8);
+  const header =
+    `${SIGNATURE_HEADER_PREFIX} ${pkg.name} @ commit ${shortHash}\n` +
+    `${SIGNATURE_HEADER_SUFFIX}\n\n`;
+
+  const results: Array<{ filePath: string; content: string }> = [];
+
+  for (let i = 0; i < csFiles.length; i++) {
+    const source = contents[i];
+    if (source === undefined) continue;
+
+    const filePath = csFiles[i]!;
+    const relPath = filePath.slice(pkg.pathInRepo.length + 1);
+    const stripped = stripCsBody(source);
+
+    results.push({ filePath: relPath, content: header + stripped });
+  }
+
+  results.sort((a, b) => a.filePath.localeCompare(b.filePath));
+  return results;
+}
+
+/**
  * Build a symbol index for a package: all type and method declarations.
  * Returns entries sorted by symbol name.
  */
@@ -197,7 +242,167 @@ export function parseIndex(raw: string): IndexEntry[] {
     });
 }
 
+// ── Body stripping ──
+
+export function stripCsBody(source: string): string {
+  const lines = source.split("\n");
+  const result: string[] = [];
+
+  let depth = 0;
+  let inBlockComment = false;
+  let skipToDepth = -1;
+  let declContext = "";
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const indent = line.substring(0, line.length - line.trimStart().length);
+
+    const analysis = analyzeLine(trimmed, inBlockComment);
+    inBlockComment = analysis.endsInComment;
+
+    if (skipToDepth >= 0) {
+      depth += analysis.opens - analysis.closes;
+      if (depth <= skipToDepth) {
+        skipToDepth = -1;
+      }
+      continue;
+    }
+
+    if (analysis.opens > 0 && analysis.closes >= analysis.opens) {
+      if (isAutoProperty(trimmed)) {
+        result.push(line);
+      } else {
+        const sigPart = trimmed
+          .substring(0, analysis.firstOpenIdx)
+          .trimEnd();
+        result.push(formatPlaceholder(indent, sigPart));
+      }
+      declContext = "";
+    } else if (analysis.opens > 0) {
+      const textBeforeBrace = trimmed.substring(0, analysis.firstOpenIdx);
+      const fullContext = declContext + " " + textBeforeBrace;
+
+      if (isTypeDecl(fullContext)) {
+        result.push(line);
+        depth += analysis.opens - analysis.closes;
+      } else {
+        skipToDepth = depth;
+        depth += analysis.opens - analysis.closes;
+
+        result.push(formatPlaceholder(indent, textBeforeBrace.trimEnd()));
+      }
+      declContext = "";
+    } else if (analysis.closes > 0) {
+      depth += analysis.opens - analysis.closes;
+      result.push(line);
+      declContext = "";
+    } else {
+      result.push(line);
+
+      if (
+        trimmed &&
+        !trimmed.startsWith("//") &&
+        !trimmed.startsWith("*") &&
+        !trimmed.startsWith("/*") &&
+        !trimmed.startsWith("[")
+      ) {
+        declContext += " " + trimmed;
+      } else if (trimmed === "") {
+        declContext = "";
+      }
+    }
+  }
+
+  return result.join("\n");
+}
+
 // ── Internal helpers ──
+
+interface LineAnalysis {
+  opens: number;
+  closes: number;
+  firstOpenIdx: number;
+  endsInComment: boolean;
+}
+
+function analyzeLine(
+  line: string,
+  startsInBlockComment: boolean,
+): LineAnalysis {
+  let opens = 0;
+  let closes = 0;
+  let firstOpenIdx = -1;
+  let inBC = startsInBlockComment;
+  let inStr = false;
+  let inChar = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]!;
+    const next = i + 1 < line.length ? line[i + 1] : "";
+
+    if (inBC) {
+      if (ch === "*" && next === "/") {
+        inBC = false;
+        i++;
+      }
+      continue;
+    }
+    if (inStr) {
+      if (ch === "\\") {
+        i++;
+        continue;
+      }
+      if (ch === '"') inStr = false;
+      continue;
+    }
+    if (inChar) {
+      if (ch === "\\") {
+        i++;
+        continue;
+      }
+      if (ch === "'") inChar = false;
+      continue;
+    }
+
+    if (ch === "/" && next === "/") break;
+    if (ch === "/" && next === "*") {
+      inBC = true;
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      continue;
+    }
+    if (ch === "'") {
+      inChar = true;
+      continue;
+    }
+
+    if (ch === "{") {
+      if (firstOpenIdx < 0) firstOpenIdx = i;
+      opens++;
+    } else if (ch === "}") {
+      closes++;
+    }
+  }
+
+  return { opens, closes, firstOpenIdx, endsInComment: inBC };
+}
+
+function isTypeDecl(context: string): boolean {
+  return TYPE_KEYWORDS_RE.test(context);
+}
+
+function isAutoProperty(line: string): boolean {
+  return AUTO_PROP_RE.test(line);
+}
+
+function formatPlaceholder(indent: string, sigPart: string): string {
+  return sigPart
+    ? `${indent}${sigPart} { /* ... */ }`
+    : `${indent}{ /* ... */ }`;
+}
 
 function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
   const lines = source.split("\n");

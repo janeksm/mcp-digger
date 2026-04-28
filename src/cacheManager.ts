@@ -11,6 +11,7 @@ interface RepoMeta {
 }
 
 const OVERVIEW_FILE = "overview.md";
+const SIGNATURES_DIR = "signatures";
 const INDEX_FILE = "index.dat";
 
 // ── Public API ──
@@ -94,6 +95,52 @@ export async function readOverview(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Write a stripped .cs signature file to a package's cache.
+ * `relPath` is the repo-relative path (e.g. "src/MyLib/Class1.cs").
+ */
+export async function writeSignature(
+  pkg: PackageConfig,
+  relPath: string,
+  content: string,
+): Promise<void> {
+  const sigPath = path.join(pkg.cachePath, SIGNATURES_DIR, relPath);
+  await fs.promises.mkdir(path.dirname(sigPath), { recursive: true });
+  const tmpPath = sigPath + ".tmp";
+  await fs.promises.writeFile(tmpPath, content);
+  await fs.promises.rename(tmpPath, sigPath);
+}
+
+/**
+ * Read all cached signature files for a package.
+ * Returns an array of { filePath, content } sorted by path.
+ */
+export async function readSignatures(
+  pkg: PackageConfig,
+): Promise<Array<{ filePath: string; content: string }>> {
+  const sigDir = path.join(pkg.cachePath, SIGNATURES_DIR);
+
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(sigDir, { withFileTypes: true, recursive: true });
+  } catch {
+    return [];
+  }
+
+  const fileEntries = entries.filter((e) => e.isFile());
+  const results = await Promise.all(
+    fileEntries.map(async (entry) => {
+      const fullPath = path.join(entry.parentPath ?? entry.path, entry.name);
+      const content = await fs.promises.readFile(fullPath, "utf-8");
+      const relPath = path.relative(sigDir, fullPath).replace(/\\/g, "/");
+      return { filePath: relPath, content };
+    }),
+  );
+
+  results.sort((a, b) => a.filePath.localeCompare(b.filePath));
+  return results;
 }
 
 /**
