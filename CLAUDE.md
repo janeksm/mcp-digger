@@ -39,7 +39,7 @@ src/
     digList.ts          ← Discovery: available repos and their package names
     digOverview.ts      ← Level 1: markdown overview of all packages in a repo
     digLookup.ts        ← Level 2: keyword search over type/method index → matching file paths
-    digSignatures.ts    ← Level 2: stripped C# signatures (type declarations, method signatures, XML docs)
+    digSignatures.ts    ← Level 2: stripped C# signatures filtered by keyword (type declarations, method sigs, XML docs)
     digFile.ts          ← Level 3: full source of a single file
 ```
 

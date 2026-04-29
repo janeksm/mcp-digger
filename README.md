@@ -12,7 +12,7 @@ Six MCP tools. One for diagnosing setup, one for discovery, four for escalating 
 | `dig_list` | Lists all configured repos and their resolved package names | Very low |
 | `dig_overview` | Markdown summary of all packages in a repo: purpose, key types, conventions | Low |
 | `dig_lookup` | Searches a package's type/method index by keyword, returns matching file paths | Low |
-| `dig_signatures` | Stripped C# signatures for a package: type declarations, method signatures, XML docs | Medium |
+| `dig_signatures` | Stripped C# signatures filtered by keyword: type declarations, method signatures, XML docs | Medium |
 | `dig_file` | Full source of a single file | High |
 
 Claude Code decides when to escalate based on the tool descriptions — no manual intervention needed. Call `dig_status` first when something looks off (auth error, stale data) to see exactly what the server sees.

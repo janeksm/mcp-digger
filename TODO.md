@@ -46,6 +46,22 @@
 | 14 | Replace wildcard repo names with `packageFilter` field | High | done | 1bc6246 | `src/config.ts`, `src/repoManager.ts`, `src/cacheManager.ts`, `src/tools/*`, `DESIGN.md` |
 | 15 | Replace `dig_signatures` with `dig_lookup` tool | High | done | ec6760c | `src/tools/digSignatures.ts` → `src/tools/digLookup.ts`, `src/sourceExtractor.ts`, `src/cacheManager.ts`, `src/index.ts`, `DESIGN.md`, `README.md` |
 | 16 | Restore `dig_signatures` alongside `dig_lookup` | High | done | cb8bb11 | `src/tools/digSignatures.ts`, `src/sourceExtractor.ts`, `src/cacheManager.ts`, `src/index.ts` |
+| 17 | Add `keyword` + `exactMatch` params to `dig_signatures` | High | done | 85a04d4 | `src/tools/digSignatures.ts`, `src/tools/digSignatures.test.ts` |
 | 9 | Prototype-pollution hardening on `JSON.parse` (SEC #7) | Medium | — | `JSON.parse(raw) as T` trusts shape. Construct fresh objects with only known fields. Low practical impact but cheap defense-in-depth. | `src/config.ts`, `src/cacheManager.ts` |
 | 10 | Cap fan-out in `discoverPackages` (SEC #8) | Medium | — | Unbounded `Promise.all` over all candidate dirs. `.slice(0, MAX)` or concurrency limiter. Log warning if cap hit. | `src/config.ts` |
 | 12 | Low/info items: defensive filePath in readFile, skip symlinks, confirm SDK Zod enforcement (SEC #11, #12, #13) | Low | — | Belt-and-braces path validation in `gitClient.readFile`; `lstat` to skip symlinks in `discoverPackages`; manual test to confirm SDK validates Zod schemas pre-handler. | `src/gitClient.ts`, `src/config.ts` |
+
+---
+
+## Phase 3 — Signature Output Quality
+
+> Postponed improvements to `dig_signatures` output quality and index coverage.
+
+| # | Task | Notes | Files |
+|---|------|-------|-------|
+| 1 | Enhanced type headings with generics + modifiers | `EntityBase (class)` → `EntityBase<TId> (abstract class)` — requires parsing generics from source | `src/tools/digSignatures.ts`, `src/sourceExtractor.ts` |
+| 2 | Strip `public` keyword from signature output | Everything returned is public by definition — keyword is noise | `src/sourceExtractor.ts` |
+| 3 | Strip boilerplate methods (Equals, GetHashCode, ToString, operators) | Reduce noise in signature output | `src/sourceExtractor.ts` |
+| 4 | Strip XML doc comments from signature output | Optionally omit `///` comments to save tokens | `src/sourceExtractor.ts` |
+| 5 | Strip private members from signature output | Only public/protected API surface should appear | `src/sourceExtractor.ts` |
+| 6 | Expand NOT_METHOD exclusion in index scanner | Equals, GetHashCode, ToString, CompareTo are currently indexed as methods — exclude them | `src/sourceExtractor.ts` |

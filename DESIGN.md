@@ -65,12 +65,12 @@
 | Field | Value |
 |-------|-------|
 | File | `src/tools/digSignatures.ts` |
-| Input | `packageName: string` — Exact name of the internal NuGet package (e.g. 'MyCompany.Core') |
+| Input | `packageName: string` — Exact name of the internal NuGet package (e.g. 'MyCompany.Core'); `keyword: string` — Type name, method name, or keyword to search for; `exactMatch?: boolean` — When true, match only exact symbol names (case-insensitive). Default: false (substring match) |
 | Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
-**Purpose:** Returns stripped C# source files for a package — public type declarations, method signatures, property definitions, and XML doc comments. Method bodies are replaced with a placeholder. Call when you need exact method overloads, generic constraints, interface members, or return types.
+**Purpose:** Returns stripped C# signatures filtered by keyword. Searches the package's type and method index, then returns stripped source for matching files — type declarations, method signatures, property definitions, and XML doc comments with method bodies replaced by placeholders. Call when you need exact method overloads, generic constraints, interface members, or return types for specific types.
 
-**Output:** Markdown with fenced C# code blocks per file. Each file has a generated header with package name and commit hash. Cached per-file under `signatures/` directory, invalidated by commit hash.
+**Output:** Markdown with fenced C# code blocks per matching file. Headings show symbol name and kind for type matches (e.g. `EntityBase (class)`), or file path for method matches. Each file has a generated header with package name and commit hash. Uses the same index as `dig_lookup` for search and per-file signature cache under `signatures/` directory, both invalidated by commit hash.
 
 ### `dig_file` — Level 3: Full Source
 
