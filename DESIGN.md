@@ -1,6 +1,6 @@
 # mcp-digger — MCP Design
 
-> MCP server exposing six tools over stdio transport. Claude Code discovers tools via their descriptions and decides when to call each one.
+> MCP server exposing eight tools over stdio transport. Claude Code discovers tools via their descriptions and decides when to call each one.
 
 ## Server
 
@@ -36,17 +36,41 @@
 
 **Output:** Markdown listing of repos with their package names. Warns if repo resolution was incomplete.
 
-### `dig_overview` — Level 1: Package Overview
+### `dig_repo_overview` — Level 1: Repo Overview
 
 | Field | Value |
 |-------|-------|
-| File | `src/tools/digOverview.ts` |
+| File | `src/tools/digRepoOverview.ts` |
 | Input | `repoName: string` — Name of the repository to overview (as shown by dig_list) |
 | Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
-**Purpose:** Returns a markdown overview of a single repo's packages — purpose, key public types/interfaces, architectural conventions, usage patterns. Call dig_list first to discover available repos.
+**Purpose:** Lists all packages in a repository with one-line summaries from `.csproj` metadata (`<PackageDescription>` + `<PackageTags>`), plus the repo root `README.md` when it exists. Use to decide which package to zoom into with `dig_package_overview`.
 
-**Output:** Markdown sections per package in the specified repo. Falls back to stale cache or "unavailable" message when a repo is unreachable. Returns unknown-repo message with available repos when name doesn't match.
+**Output:** Repo root README (if present) followed by a bullet list of packages with summaries and a count footer. Returns unknown-repo message when name doesn't match.
+
+### `dig_package_overview` — Level 1: Package Overview
+
+| Field | Value |
+|-------|-------|
+| File | `src/tools/digPackageOverview.ts` |
+| Input | `repoName: string` — Name of the repository; `packageName: string` — Exact name of the internal NuGet package |
+| Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
+
+**Purpose:** Returns the full overview for a single package — purpose, key public types/interfaces, architectural conventions. Call `dig_repo_overview` first to discover packages.
+
+**Output:** Markdown with package docs (README, CONVENTIONS, ARCHITECTURE), key interfaces, and abstract classes (no file listing). Falls back to stale cache when repo is unreachable. Returns unknown-package message with available packages when name doesn't match.
+
+### `dig_package_files` — Level 1: Package File Listing
+
+| Field | Value |
+|-------|-------|
+| File | `src/tools/digPackageFiles.ts` |
+| Input | `repoName: string` — Name of the repository; `packageName: string` — Exact name of the internal NuGet package |
+| Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
+
+**Purpose:** Lists all C# source files in a package (excluding generated files). Use to see what files exist before calling `dig_file` for full source.
+
+**Output:** Bullet list of `.cs` file paths relative to the package root, with a count footer. Excludes `.g.cs`, `.generated.cs`, `.Designer.cs` files.
 
 ### `dig_lookup` — Level 2: Symbol Lookup
 
@@ -77,7 +101,7 @@
 | Field | Value |
 |-------|-------|
 | File | `src/tools/digFile.ts` |
-| Input | `packageName: string` — Exact name of the internal NuGet package (e.g. 'MyCompany.Core'); `filePath: string` — File path relative to the package root, as shown by dig_lookup or dig_overview (e.g. 'Services/FooService.cs') |
+| Input | `packageName: string` — Exact name of the internal NuGet package (e.g. 'MyCompany.Core'); `filePath: string` — File path relative to the package root, as shown by dig_lookup or dig_package_files (e.g. 'Services/FooService.cs') |
 | Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
 **Purpose:** Full source of a single file. Call only when implementation detail is needed — tracing behaviour, understanding algorithms, debugging. Avoid speculative calls. Capped at 1 MB (`FILE_CHAR_LIMIT`).
@@ -89,10 +113,10 @@
 Claude Code follows a progressive disclosure pattern — escalating detail only as needed:
 
 ```
-dig_status  →  dig_list  →  dig_overview(repo)  →  dig_lookup(pkg, keyword)   →  dig_file(pkg, file)
-(health)       (discover)   (what exists)           (find symbol → file)          (implementation)
-                                                 →  dig_signatures(pkg)
-                                                    (all public API signatures)
+dig_status  →  dig_list  →  dig_repo_overview(repo)    →  dig_package_overview(repo, pkg)  →  dig_lookup(pkg, kw)    →  dig_file(pkg, path)
+(health)       (discover)   (README + package listing)    (docs, interfaces, classes)          (symbol → file search)    (full source)
+                                                        →  dig_package_files(repo, pkg)      →  dig_signatures(pkg, kw)
+                                                           (source file listing)                 (stripped public API)
 ```
 
 Each tool's description guides Claude on when to escalate to the next level.
@@ -100,7 +124,7 @@ Each tool's description guides Claude on when to escalate to the next level.
 ## Shared Conventions
 
 - **Never throws.** All tools return a usable text response on every error path (stale cache fallback, unavailable messages, valid path listings).
-- **`isError` on failures.** Tools that can fail (`dig_file`, `dig_lookup`, `dig_overview`) return `isError: true` on error paths so the LLM can distinguish failures from successful-but-empty results. Internally, each tool function returns `ToolResult { text, isError }` using `toolSuccess()`/`toolError()` constructors from `shared.ts`. The `toCallToolResult()` helper converts this to the MCP wire format, spreading `isError` only when true.
+- **`isError` on failures.** Tools that can fail (`dig_file`, `dig_lookup`, `dig_package_overview`) return `isError: true` on error paths so the LLM can distinguish failures from successful-but-empty results. Internally, each tool function returns `ToolResult { text, isError }` using `toolSuccess()`/`toolError()` constructors from `shared.ts`. The `toCallToolResult()` helper converts this to the MCP wire format, spreading `isError` only when true.
 - **Content format.** All tools return `{ content: [{ type: "text", text }] }` — standard `CallToolResult`.
 - **Config-driven.** Tools receive resolved `DiggerConfig` at registration time. They never read env vars directly.
 - **Cache-aware.** Overview and lookup tools use commit-hash-based cache invalidation. File tool reads directly from git.

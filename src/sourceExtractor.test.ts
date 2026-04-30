@@ -6,6 +6,7 @@ import type { PackageConfig } from "./config.js";
 import {
   extractIndex,
   extractOverview,
+  extractPackageSummary,
   extractSignatures,
   stripCsBody,
   serializeIndex,
@@ -497,7 +498,7 @@ describe("extractOverview", () => {
     );
   });
 
-  it("lists source files relative to package dir", async () => {
+  it("does not include source file listing", async () => {
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/Domain/User.cs": "namespace MyLib.Domain;\npublic class User { }",
       "src/MyLib/Services/Auth.cs":
@@ -507,24 +508,8 @@ describe("extractOverview", () => {
 
     const overview = await extractOverview(repoDir, pkg, "abc123");
 
-    expect(overview).toContain("## Source Files");
-    expect(overview).toContain("- Domain/User.cs");
-    expect(overview).toContain("- Services/Auth.cs");
-  });
-
-  it("excludes generated files", async () => {
-    const repoDir = await initRepo(tmpDir, {
-      "src/MyLib/Class1.cs": "namespace MyLib;\npublic class Class1 { }",
-      "src/MyLib/Class1.g.cs": "// generated",
-      "src/MyLib/Model.generated.cs": "// generated",
-    });
-    const pkg = makePkg("MyLib", "src/MyLib");
-
-    const overview = await extractOverview(repoDir, pkg, "abc123");
-
-    expect(overview).toContain("- Class1.cs");
-    expect(overview).not.toContain("Class1.g.cs");
-    expect(overview).not.toContain("Model.generated.cs");
+    expect(overview).not.toContain("## Source Files");
+    expect(overview).not.toContain("Domain/User.cs");
   });
 
   it("handles package with no docs or types gracefully", async () => {
@@ -537,7 +522,7 @@ describe("extractOverview", () => {
     const overview = await extractOverview(repoDir, pkg, "abc123");
 
     expect(overview).toContain("# MyLib");
-    expect(overview).toContain("- Helper.cs");
+    expect(overview).not.toContain("## Source Files");
     expect(overview).not.toContain("## Key Interfaces");
     expect(overview).not.toContain("## Abstract Classes");
   });
@@ -863,5 +848,89 @@ describe("serializeIndex / parseIndex", () => {
   it("returns empty array for empty string", () => {
     expect(parseIndex("")).toEqual([]);
     expect(parseIndex("  \n  ")).toEqual([]);
+  });
+});
+
+// ── extractPackageSummary ──
+
+describe("extractPackageSummary", () => {
+  it("returns PackageDescription from .csproj", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/MyLib.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <PropertyGroup>",
+        "    <PackageDescription>Data change auditation</PackageDescription>",
+        "  </PropertyGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    const pkg = makePkg("MyLib", "src/MyLib");
+
+    const summary = await extractPackageSummary(repoDir, pkg);
+
+    expect(summary).toBe("Data change auditation");
+  });
+
+  it("appends PackageTags when present", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/MyLib.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <PropertyGroup>",
+        "    <PackageDescription>Data change auditation</PackageDescription>",
+        "    <PackageTags>audit</PackageTags>",
+        "  </PropertyGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    const pkg = makePkg("MyLib", "src/MyLib");
+
+    const summary = await extractPackageSummary(repoDir, pkg);
+
+    expect(summary).toBe("Data change auditation (tags: audit)");
+  });
+
+  it("returns tags-only when no description", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/MyLib.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <PropertyGroup>",
+        "    <PackageTags>core;domain</PackageTags>",
+        "  </PropertyGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    const pkg = makePkg("MyLib", "src/MyLib");
+
+    const summary = await extractPackageSummary(repoDir, pkg);
+
+    expect(summary).toBe("(tags: core;domain)");
+  });
+
+  it("returns undefined when .csproj has neither description nor tags", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/MyLib.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <PropertyGroup>",
+        "    <TargetFramework>net8.0</TargetFramework>",
+        "  </PropertyGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    const pkg = makePkg("MyLib", "src/MyLib");
+
+    const summary = await extractPackageSummary(repoDir, pkg);
+
+    expect(summary).toBeUndefined();
+  });
+
+  it("returns undefined when no .csproj in package dir", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/Class1.cs": "namespace MyLib; public class Class1 { }",
+    });
+    const pkg = makePkg("MyLib", "src/MyLib");
+
+    const summary = await extractPackageSummary(repoDir, pkg);
+
+    expect(summary).toBeUndefined();
   });
 });

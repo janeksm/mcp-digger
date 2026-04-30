@@ -680,6 +680,20 @@ export function formatUnknownPackage(
   return lines.join("\n");
 }
 
+/** Format an error message for an unknown package within a specific repo. */
+export function formatUnknownPackageInRepo(
+  repoName: string,
+  packageName: string,
+  packages: readonly PackageConfig[],
+): string {
+  const available = packages.map((p) => p.name);
+  if (available.length > 0) {
+    const listing = available.map((n) => `- ${n}`).join("\n");
+    return `Unknown package '${packageName}' in repo '${repoName}'. Available packages:\n${listing}`;
+  }
+  return `Unknown package '${packageName}' in repo '${repoName}'. No packages resolved yet — call dig_list first.`;
+}
+
 /** Format an error message for an unknown repo name. */
 export function formatUnknownRepo(
   config: DiggerConfig,

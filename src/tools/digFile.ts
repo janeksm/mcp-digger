@@ -15,7 +15,7 @@ const DESCRIPTION = `Digs to the deepest level — full source of a single file 
 Call this only when you need to understand the actual implementation — for example
 to trace specific behaviour, understand a complex algorithm, or debug an unexpected
 result. Provide both package name and file path (relative path as shown by
-dig_lookup or dig_overview). Avoid calling this speculatively — prefer dig_lookup
+dig_lookup or dig_package_files). Avoid calling this speculatively — prefer dig_lookup
 to find the right file first, then dig_file only for the specific file you need.`;
 
 // ── Public API ──
@@ -31,7 +31,7 @@ export function registerDigFile(
       description: DESCRIPTION,
       inputSchema: {
         packageName: PACKAGE_NAME_PARAM,
-        filePath: z.string().describe("File path relative to the package root, as shown by dig_lookup or dig_overview (e.g. 'Services/FooService.cs')"),
+        filePath: z.string().describe("File path relative to the package root, as shown by dig_lookup or dig_package_files (e.g. 'Services/FooService.cs')"),
       },
       annotations: TOOL_ANNOTATIONS,
     },

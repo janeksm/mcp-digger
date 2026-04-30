@@ -8,7 +8,9 @@ import { debug, error, initLogger } from "./logger.js";
 import { registerDigFile } from "./tools/digFile.js";
 import { registerDigList } from "./tools/digList.js";
 import { registerDigLookup } from "./tools/digLookup.js";
-import { registerDigOverview } from "./tools/digOverview.js";
+import { registerDigPackageFiles } from "./tools/digPackageFiles.js";
+import { registerDigPackageOverview } from "./tools/digPackageOverview.js";
+import { registerDigRepoOverview } from "./tools/digRepoOverview.js";
 import { registerDigSignatures } from "./tools/digSignatures.js";
 import { registerDigStatus } from "./tools/digStatus.js";
 
@@ -29,7 +31,9 @@ try {
   registerDigList(server, config);
   registerDigLookup(server, config);
   registerDigSignatures(server, config);
-  registerDigOverview(server, config);
+  registerDigRepoOverview(server, config);
+  registerDigPackageOverview(server, config);
+  registerDigPackageFiles(server, config);
   registerDigFile(server, config);
   registerDigStatus(server, config);
 

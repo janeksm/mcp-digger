@@ -20,7 +20,7 @@ import { extractIndex, serializeIndex, parseIndex, type IndexEntry } from "../so
 const DESCRIPTION = `Searches a package's type and method index for a keyword.
 Use this when you know a type or method name (or part of it) and need to find
 which file contains it. Returns matching symbol declarations with their file paths.
-Call dig_overview first to understand the package, then dig_lookup to locate specific
+Call dig_package_overview first to understand the package, then dig_lookup to locate specific
 types or methods, then dig_file to read the full source of a matched file.`;
 
 const KEYWORD_PARAM = z.string().describe(
@@ -96,7 +96,7 @@ export async function digLookup(
       if (matches.length === 0) {
         return toolSuccess(
           `# ${packageName} — lookup: "${keyword}"\n\n` +
-          `No matches for '${keyword}'. Try a broader term or call dig_overview to see available types.`,
+          `No matches for '${keyword}'. Try a broader term or call dig_package_overview to see available types.`,
         );
       }
 

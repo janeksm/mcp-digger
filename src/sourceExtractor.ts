@@ -114,16 +114,6 @@ export async function extractOverview(
     sections.push("");
   }
 
-  // Source file listing
-  if (csFiles.length > 0) {
-    sections.push("## Source Files\n");
-    for (const f of csFiles.sort()) {
-      const relPath = f.slice(pkg.pathInRepo.length + 1);
-      sections.push(`- ${relPath}`);
-    }
-    sections.push("");
-  }
-
   return sections.join("\n").trimEnd() + "\n";
 }
 
@@ -195,6 +185,39 @@ export async function extractIndex(
 
   entries.sort((a, b) => a.symbol.localeCompare(b.symbol));
   return entries;
+}
+
+const PKG_DESC_RE = /<PackageDescription>(.*?)<\/PackageDescription>/s;
+const PKG_TAGS_RE = /<PackageTags>(.*?)<\/PackageTags>/s;
+
+/**
+ * Extract a one-line summary from a package's .csproj metadata.
+ * Returns `<PackageDescription>` + `(tags: <PackageTags>)` if present.
+ */
+export async function extractPackageSummary(
+  repoDir: string,
+  pkg: PackageConfig,
+): Promise<string | undefined> {
+  // Try conventional path first (PackageName/PackageName.csproj) to avoid listFiles
+  let content = await tryReadFile(repoDir, `${pkg.pathInRepo}/${pkg.name}.csproj`);
+  if (content === undefined) {
+    const allFiles = await listFiles(repoDir, pkg.pathInRepo + "/");
+    const csproj = allFiles.find((f) => f.endsWith(".csproj"));
+    if (!csproj) return undefined;
+    content = await tryReadFile(repoDir, csproj);
+    if (content === undefined) return undefined;
+  }
+
+  const descMatch = PKG_DESC_RE.exec(content);
+  const tagsMatch = PKG_TAGS_RE.exec(content);
+
+  const desc = descMatch?.[1]?.trim().replace(/\s+/g, " ");
+  const tags = tagsMatch?.[1]?.trim().replace(/\s+/g, " ");
+
+  if (!desc && !tags) return undefined;
+  if (!desc) return `(tags: ${tags})`;
+  if (!tags) return desc;
+  return `${desc} (tags: ${tags})`;
 }
 
 /**
@@ -471,7 +494,7 @@ function countChar(s: string, ch: string): number {
   return count;
 }
 
-function filterCsFiles(files: string[]): string[] {
+export function filterCsFiles(files: string[]): string[] {
   return files.filter((f) => f.endsWith(".cs") && !isGenerated(f));
 }
 

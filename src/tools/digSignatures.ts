@@ -25,7 +25,7 @@ for matching files — type declarations, method signatures, property definition
 and XML doc comments with method bodies replaced by placeholders.
 Call this when you need exact method overloads, generic constraints,
 interface members, or return types for specific types.
-Call dig_overview first, then dig_lookup to locate symbols,
+Call dig_package_overview first, then dig_lookup to locate symbols,
 then dig_signatures to see their full public API surface.`;
 
 const KEYWORD_PARAM = z.string().describe(

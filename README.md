@@ -4,13 +4,15 @@ MCP server that gives Claude Code progressive, on-demand access to internal .NET
 
 ## How It Works
 
-Six MCP tools. One for diagnosing setup, one for discovery, four for escalating detail as needed:
+Eight MCP tools. One for diagnosing setup, one for discovery, six for escalating detail as needed:
 
 | Tool | What it returns | Token cost |
 |------|----------------|------------|
 | `dig_status` | Health check — validates config and tests git connectivity for every configured repo | Very low |
 | `dig_list` | Lists all configured repos and their resolved package names | Very low |
-| `dig_overview` | Markdown summary of all packages in a repo: purpose, key types, conventions | Low |
+| `dig_repo_overview` | Repo root README + one-line-per-package listing with .csproj metadata summaries | Low |
+| `dig_package_overview` | Full overview for a single package: docs, key interfaces, abstract classes | Low |
+| `dig_package_files` | Lists all C# source files in a package (excluding generated files) | Low |
 | `dig_lookup` | Searches a package's type/method index by keyword, returns matching file paths | Low |
 | `dig_signatures` | Stripped C# signatures filtered by keyword: type declarations, method signatures, XML docs | Medium |
 | `dig_file` | Full source of a single file | High |
@@ -80,7 +82,9 @@ This project uses internal NuGet packages. Use mcp-digger tools to understand th
 
 - **`dig_status`** — run first if anything looks broken (auth errors, missing packages)
 - **`dig_list`** — discover available repos and packages
-- **`dig_overview`** — call for any task involving shared libraries to understand what's there
+- **`dig_repo_overview`** — see what packages a repo contains and their summaries
+- **`dig_package_overview`** — understand a specific package's key types and interfaces
+- **`dig_package_files`** — list source files in a package
 - **`dig_lookup`** — when you need to find which file contains a specific type or method
 - **`dig_signatures`** — when you need exact method overloads, generic constraints, or interface members
 - **`dig_file`** — only when you need implementation detail of a specific file
@@ -123,7 +127,7 @@ With the `.mcp/mcp-config.json` shown in Quick Start, just open Claude Code in y
 
 1. Open Claude Code in the .NET solution directory
 2. Ask Claude: *"Run dig_status and show me what's configured"* — confirms the server is wired up and repos are reachable
-3. Ask a follow-up like: *"What shared internal packages are available?"* — Claude should call `dig_list` then `dig_overview`
+3. Ask a follow-up like: *"What shared internal packages are available?"* — Claude should call `dig_list` then `dig_repo_overview`
 4. Ask: *"Where is the IOrderService interface defined?"* — Claude should call `dig_lookup`
 
 ### Debug logging
