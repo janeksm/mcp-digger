@@ -77,12 +77,12 @@
 | Field | Value |
 |-------|-------|
 | File | `src/tools/digLookup.ts` |
-| Input | `packageName: string` — Exact name of the internal NuGet package (e.g. 'MyCompany.Core'); `keyword: string` — Type name, method name, or keyword to search for |
+| Input | `packageName?: string` — Exact name of the internal NuGet package (e.g. 'MyCompany.Core'). Omit to search all packages; `keyword: string` — Type name, method name, or keyword to search for |
 | Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
-**Purpose:** Searches a package's cached type/method index for a keyword. Returns matching symbols with their file paths. Call when you know a type or method name and need to find which file implements it — then use `dig_file` to read that file.
+**Purpose:** Searches type/method indexes for a keyword. Returns matching symbols with their file paths. Provide `packageName` to search within a specific package, or omit it to search across all packages — useful when you don't know which package contains a type. Call when you know a type or method name and need to find which file implements it — then use `dig_file` to read that file.
 
-**Output:** Markdown listing matching symbols (type name, kind, file path). Index cached per package as flat pipe-delimited file (`index.dat`), invalidated by commit hash.
+**Output:** When `packageName` is provided: markdown listing matching symbols (type name, kind, file path). When omitted: results grouped by package with `## PackageName` headings, capped at 100 total matches. Index cached per package as flat pipe-delimited file (`index.dat`), invalidated by commit hash.
 
 ### `dig_signatures` — Level 2: Stripped Signatures
 

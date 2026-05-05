@@ -19,6 +19,13 @@ import {
 } from "../testHelpers.js";
 import { digLookup } from "./digLookup.js";
 
+// C# source fragments for cross-package tests
+const CS_INTERFACE = (ns: string, name: string) =>
+  `namespace ${ns};\npublic interface ${name}\n{\n    void Execute();\n}`;
+
+const CS_CLASS = (ns: string, name: string) =>
+  `namespace ${ns};\npublic class ${name}\n{\n    public void Run() { }\n}`;
+
 // ── Test helpers ──
 
 let tmpDir: string;
@@ -324,5 +331,159 @@ describe("cache freshness lifecycle", () => {
     const cached = await readIndex(pkg);
     expect(cached).toBeDefined();
     expect(cached).toContain("X|class");
+  });
+});
+
+// ── Cross-package lookup ──
+
+describe("cross-package lookup", () => {
+  it("finds matches across multiple packages in the same repo", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Alpha/IAlphaService.cs": CS_INTERFACE("Alpha", "IAlphaService"),
+      "src/Beta/IBetaService.cs": CS_INTERFACE("Beta", "IBetaService"),
+    });
+
+    const alpha = makePkg("Alpha", "myrepo", "src", cacheDir);
+    const beta = makePkg("Beta", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [alpha, beta], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, undefined, "Service");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("Cross-package lookup");
+    expect(result.text).toContain("IAlphaService");
+    expect(result.text).toContain("IBetaService");
+    expect(result.text).toContain("## Alpha");
+    expect(result.text).toContain("## Beta");
+  });
+
+  it("finds matches across packages in different repos", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir1 = await initRepo(tmpDir, {
+      "src/Alpha/AlphaWorker.cs": CS_CLASS("Alpha", "AlphaWorker"),
+    });
+    const repoDir2 = await initRepo(tmpDir, {
+      "src/Beta/BetaWorker.cs": CS_CLASS("Beta", "BetaWorker"),
+    });
+
+    const alpha = makePkg("Alpha", "repo1", "src", cacheDir);
+    const beta = makePkg("Beta", "repo2", "src", cacheDir);
+    const repo1 = makeLocalRepo("repo1", repoDir1, [alpha], tmpDir);
+    const repo2 = makeLocalRepo("repo2", repoDir2, [beta], tmpDir);
+    const config = makeConfig([repo1, repo2], tmpDir, cacheDir);
+
+    const result = await digLookup(config, undefined, "Worker");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("AlphaWorker");
+    expect(result.text).toContain("BetaWorker");
+    expect(result.text).toContain("across 2 packages");
+  });
+
+  it("returns no-matches message when keyword not found anywhere", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Alpha/Foo.cs": CS_CLASS("Alpha", "Foo"),
+    });
+
+    const alpha = makePkg("Alpha", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [alpha], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, undefined, "NonExistent");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("No matches");
+    expect(result.text).toContain("NonExistent");
+  });
+
+  it("handles repo errors gracefully with partial results", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Alpha/AlphaType.cs": CS_CLASS("Alpha", "AlphaType"),
+    });
+
+    const alpha = makePkg("Alpha", "goodrepo", "src", cacheDir);
+    const beta = makePkg("Beta", "badrepo", "src", cacheDir);
+    const goodRepo = makeLocalRepo("goodrepo", repoDir, [alpha], tmpDir);
+    const badRepo = makeRepoConfig(
+      {
+        name: "badrepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [beta],
+      },
+      tmpDir,
+    );
+    const config = makeConfig([goodRepo, badRepo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, undefined, "AlphaType");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("AlphaType");
+    expect(result.text).toContain("Warning");
+  });
+
+  it("uses stale cache for unreachable repo", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const pkg = makePkg("StaleLib", "gonerepo", "src", cacheDir);
+    await writeIndex(pkg, "StaleType|class|Stale.cs");
+
+    const repo = makeRepoConfig(
+      {
+        name: "gonerepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkg],
+      },
+      tmpDir,
+    );
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, undefined, "StaleType");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("StaleType");
+    expect(result.text).toContain("## StaleLib");
+  });
+
+  it("skips packages with no .cs files", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Alpha/AlphaType.cs": CS_CLASS("Alpha", "AlphaType"),
+      "src/Empty/readme.txt": "no code here",
+    });
+
+    const alpha = makePkg("Alpha", "myrepo", "src", cacheDir);
+    const empty = makePkg("Empty", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [alpha, empty], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, undefined, "AlphaType");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("AlphaType");
+    expect(result.text).toContain("across 1 package");
+    expect(result.text).not.toContain("## Empty");
+  });
+
+  it("uses cached index when fresh", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Alpha/Dummy.cs": CS_CLASS("Alpha", "Dummy"),
+    });
+
+    const alpha = makePkg("Alpha", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [alpha], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    await writeIndex(alpha, "CachedSymbol|class|Cached.cs");
+    await markFresh(cacheDir, "myrepo", await getHeadHash(repoDir));
+
+    const result = await digLookup(config, undefined, "CachedSymbol");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("CachedSymbol");
+    expect(result.text).toContain("Cached.cs");
   });
 });
