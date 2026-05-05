@@ -11,6 +11,8 @@ import {
   stripCsBody,
   serializeIndex,
   parseIndex,
+  countReferences,
+  searchReferences,
 } from "./sourceExtractor.js";
 import { initRepo } from "./testHelpers.js";
 
@@ -932,5 +934,210 @@ describe("extractPackageSummary", () => {
     const summary = await extractPackageSummary(repoDir, pkg);
 
     expect(summary).toBeUndefined();
+  });
+});
+
+// ── Base type extraction in index ──
+
+describe("extractIndex — baseTypes", () => {
+  it("captures single base class", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Foo.cs": "namespace Lib;\npublic class Foo : Bar\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const foo = entries.find((e) => e.symbol === "Foo");
+    expect(foo?.baseTypes).toEqual(["Bar"]);
+  });
+
+  it("captures multiple interfaces", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Svc.cs": "namespace Lib;\npublic class Svc : IFoo, IBar\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const svc = entries.find((e) => e.symbol === "Svc");
+    expect(svc?.baseTypes).toEqual(["IFoo", "IBar"]);
+  });
+
+  it("strips generic parameters from base types", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Repo.cs": "namespace Lib;\npublic class Repo<T> : IRepo<T>, IDisposable\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const repo = entries.find((e) => e.symbol === "Repo");
+    expect(repo?.baseTypes).toEqual(["IRepo", "IDisposable"]);
+  });
+
+  it("handles nested generics", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/H.cs": "namespace Lib;\npublic class H : IHandler<Result<User>>\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const h = entries.find((e) => e.symbol === "H");
+    expect(h?.baseTypes).toEqual(["IHandler"]);
+  });
+
+  it("strips where clause", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/R.cs": "namespace Lib;\npublic class R<T> : IRepo<T> where T : class\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const r = entries.find((e) => e.symbol === "R");
+    expect(r?.baseTypes).toEqual(["IRepo"]);
+  });
+
+  it("handles record with constructor and inheritance", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Dto.cs": "namespace Lib;\npublic record Dto(int Id) : IDto;",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const dto = entries.find((e) => e.symbol === "Dto");
+    expect(dto?.baseTypes).toEqual(["IDto"]);
+  });
+
+  it("returns no baseTypes for class without inheritance", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Plain.cs": "namespace Lib;\npublic class Plain\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const plain = entries.find((e) => e.symbol === "Plain");
+    expect(plain?.baseTypes).toBeUndefined();
+  });
+
+  it("handles interface extending interface", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/IExt.cs": "namespace Lib;\npublic interface IExt : IBase\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const ext = entries.find((e) => e.symbol === "IExt");
+    expect(ext?.baseTypes).toEqual(["IBase"]);
+  });
+
+  it("handles multi-line inheritance (Allman style)", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Multi.cs": [
+        "namespace Lib;",
+        "public class Multi",
+        "    : IFoo,",
+        "      IBar",
+        "{",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const multi = entries.find((e) => e.symbol === "Multi");
+    expect(multi?.baseTypes).toEqual(["IFoo", "IBar"]);
+  });
+
+  it("handles K&R style with base types on same line as brace", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Inline.cs": "namespace Lib;\npublic class Inline : IFoo {",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const inline = entries.find((e) => e.symbol === "Inline");
+    expect(inline?.baseTypes).toEqual(["IFoo"]);
+  });
+});
+
+// ── Serialization with baseTypes ──
+
+describe("serializeIndex / parseIndex — baseTypes", () => {
+  it("round-trips entries with baseTypes", () => {
+    const entries = [
+      { symbol: "Foo", kind: "class" as const, filePath: "Foo.cs", baseTypes: ["IBar", "IBaz"] },
+      { symbol: "Bar", kind: "interface" as const, filePath: "Bar.cs" },
+    ];
+    const raw = serializeIndex(entries);
+    const parsed = parseIndex(raw);
+    expect(parsed[0]?.baseTypes).toEqual(["IBar", "IBaz"]);
+    expect(parsed[1]?.baseTypes).toBeUndefined();
+  });
+
+  it("parses old format (3-field) as no baseTypes", () => {
+    const raw = "Foo|class|Foo.cs\nBar|interface|Bar.cs";
+    const parsed = parseIndex(raw);
+    expect(parsed[0]?.baseTypes).toBeUndefined();
+    expect(parsed[1]?.baseTypes).toBeUndefined();
+  });
+
+  it("handles mixed entries (types with/without baseTypes and methods)", () => {
+    const entries = [
+      { symbol: "Svc", kind: "class" as const, filePath: "Svc.cs", baseTypes: ["ISvc"] },
+      { symbol: "Plain", kind: "class" as const, filePath: "Plain.cs" },
+      { symbol: "Run", kind: "method" as const, parentType: "Svc", filePath: "Svc.cs" },
+    ];
+    const raw = serializeIndex(entries);
+    const parsed = parseIndex(raw);
+    expect(parsed).toHaveLength(3);
+    expect(parsed[0]?.baseTypes).toEqual(["ISvc"]);
+    expect(parsed[1]?.baseTypes).toBeUndefined();
+    expect(parsed[2]?.kind).toBe("method");
+    expect(parsed[2]?.parentType).toBe("Svc");
+  });
+});
+
+// ── countReferences ──
+
+describe("countReferences", () => {
+  it("counts word-boundary matches", () => {
+    const source = "IFoo foo = new FooImpl(); IFoo bar;";
+    expect(countReferences(source, "IFoo")).toBe(2);
+  });
+
+  it("does not match substrings", () => {
+    const source = "IFooFactory factory = new IFooFactory();";
+    expect(countReferences(source, "IFoo")).toBe(0);
+  });
+
+  it("matches before generic brackets", () => {
+    const source = "List<IFoo> items; IFoo<T> other;";
+    expect(countReferences(source, "IFoo")).toBe(2);
+  });
+
+  it("is case-sensitive", () => {
+    const source = "IFoo foo; ifoo bar; IFOO baz;";
+    expect(countReferences(source, "IFoo")).toBe(1);
+  });
+});
+
+// ── searchReferences ──
+
+describe("searchReferences", () => {
+  it("finds files referencing a type", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/IService.cs": "namespace Lib;\npublic interface IService\n{\n    void Run();\n}",
+      "src/Lib/Impl.cs": "namespace Lib;\npublic class Impl : IService\n{\n    public void Run() { }\n}",
+      "src/Lib/Other.cs": "namespace Lib;\npublic class Other\n{\n    public void Noop() { }\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+
+    const refs = await searchReferences(repoDir, pkg, "IService");
+
+    expect(refs.length).toBe(2);
+    expect(refs.some((r) => r.filePath === "IService.cs")).toBe(true);
+    expect(refs.some((r) => r.filePath === "Impl.cs")).toBe(true);
+    expect(refs.some((r) => r.filePath === "Other.cs")).toBe(false);
+  });
+
+  it("respects maxFiles cap", async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 5; i++) {
+      files[`src/Lib/File${i}.cs`] = `namespace Lib;\npublic class File${i} : ITarget\n{\n}`;
+    }
+    const repoDir = await initRepo(tmpDir, files);
+    const pkg = makePkg("Lib", "src/Lib");
+
+    const refs = await searchReferences(repoDir, pkg, "ITarget", 3);
+
+    expect(refs.length).toBe(3);
   });
 });

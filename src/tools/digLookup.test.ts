@@ -487,3 +487,206 @@ describe("cross-package lookup", () => {
     expect(result.text).toContain("Cached.cs");
   });
 });
+
+// ── Implements mode ──
+
+const CS_WITH_BASE = (ns: string, name: string, bases: string) =>
+  `namespace ${ns};\npublic class ${name} : ${bases}\n{\n    public void Run() { }\n}`;
+
+describe("implements mode", () => {
+  it("finds implementors in a single package", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/IService.cs": CS_INTERFACE("Lib", "IService"),
+      "src/Lib/ServiceImpl.cs": CS_WITH_BASE("Lib", "ServiceImpl", "IService"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "IService", "implements");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("ServiceImpl");
+    expect(result.text).toContain("implements");
+    expect(result.text).toContain(": IService");
+  });
+
+  it("finds implementors cross-package", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Core/IRepo.cs": CS_INTERFACE("Core", "IRepo"),
+      "src/Data/SqlRepo.cs": CS_WITH_BASE("Data", "SqlRepo", "IRepo"),
+    });
+
+    const core = makePkg("Core", "myrepo", "src", cacheDir);
+    const data = makePkg("Data", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [core, data], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, undefined, "IRepo", "implements");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("SqlRepo");
+    expect(result.text).toContain("## Data");
+  });
+
+  it("matches case-insensitively", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Impl.cs": CS_WITH_BASE("Lib", "Impl", "IService"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "iservice", "implements");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("Impl");
+  });
+
+  it("returns no-match message when nothing implements the keyword", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Foo.cs": CS_CLASS("Lib", "Foo"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "INothing", "implements");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("No types implementing");
+  });
+
+  it("finds subclasses of abstract class", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Base.cs": "namespace Lib;\npublic abstract class Base\n{\n}",
+      "src/Lib/Child.cs": CS_WITH_BASE("Lib", "Child", "Base"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "Base", "implements");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("Child");
+    expect(result.text).toContain(": Base");
+  });
+});
+
+// ── References mode ──
+
+describe("references mode", () => {
+  it("finds files referencing a type", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/IService.cs": CS_INTERFACE("Lib", "IService"),
+      "src/Lib/Consumer.cs": [
+        "namespace Lib;",
+        "public class Consumer",
+        "{",
+        "    private readonly IService _svc;",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "IService", "references");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("references");
+    expect(result.text).toContain("IService.cs");
+    expect(result.text).toContain("Consumer.cs");
+  });
+
+  it("respects word boundaries", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/IFoo.cs": CS_INTERFACE("Lib", "IFoo"),
+      "src/Lib/IFooFactory.cs": [
+        "namespace Lib;",
+        "public interface IFooFactory",
+        "{",
+        "    IFoo Create();",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "IFoo", "references");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("IFoo.cs");
+    expect(result.text).toContain("IFooFactory.cs");
+    // IFooFactory.cs has "IFoo" as a word boundary match in "IFoo Create()"
+  });
+
+  it("cross-package reference search", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Core/IEntity.cs": "namespace Core;\npublic interface IEntity { }",
+      "src/Data/Repo.cs": "namespace Data;\npublic class Repo\n{\n    public IEntity Get() { return null; }\n}",
+    });
+
+    const core = makePkg("Core", "myrepo", "src", cacheDir);
+    const data = makePkg("Data", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [core, data], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, undefined, "IEntity", "references");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("## Core");
+    expect(result.text).toContain("## Data");
+    expect(result.text).toContain("IEntity.cs");
+    expect(result.text).toContain("Repo.cs");
+  });
+
+  it("returns no-references message when keyword not found", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Foo.cs": CS_CLASS("Lib", "Foo"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "NonExistent", "references");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("No references");
+  });
+
+  it("default mode is symbol (backward compat)", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/IService.cs": CS_INTERFACE("Lib", "IService"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "IService");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("lookup:");
+    expect(result.text).toContain("IService");
+  });
+});

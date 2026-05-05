@@ -39,7 +39,13 @@ export interface IndexEntry {
   symbol: string;
   kind: "class" | "interface" | "struct" | "enum" | "record" | "method";
   parentType?: string;
+  baseTypes?: string[];
   filePath: string;
+}
+
+export interface FileReference {
+  filePath: string;
+  count: number;
 }
 
 // ── Public API ──
@@ -222,16 +228,18 @@ export async function extractPackageSummary(
 
 /**
  * Serialize index entries to flat pipe-delimited format.
- * Types: `symbol|kind|filePath`
+ * Types: `symbol|kind|filePath` or `symbol|kind|filePath|Base1,Base2`
  * Methods: `symbol|method|parentType|filePath`
  */
 export function serializeIndex(entries: IndexEntry[]): string {
   return entries
-    .map((e) =>
-      e.kind === "method"
-        ? `${e.symbol}|method|${e.parentType}|${e.filePath}`
-        : `${e.symbol}|${e.kind}|${e.filePath}`,
-    )
+    .map((e) => {
+      if (e.kind === "method") {
+        return `${e.symbol}|method|${e.parentType}|${e.filePath}`;
+      }
+      const bases = e.baseTypes?.length ? `|${e.baseTypes.join(",")}` : "";
+      return `${e.symbol}|${e.kind}|${e.filePath}${bases}`;
+    })
     .join("\n");
 }
 
@@ -257,11 +265,15 @@ export function parseIndex(raw: string): IndexEntry[] {
           filePath: parts[3]!,
         };
       }
-      return {
+      const entry: IndexEntry = {
         symbol: parts[0]!,
         kind: parts[1] as IndexEntry["kind"],
         filePath: parts[2]!,
       };
+      if (parts.length >= 4 && parts[3]) {
+        entry.baseTypes = parts[3].split(",");
+      }
+      return entry;
     });
 }
 
@@ -435,8 +447,8 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
   const typeDepths: number[] = [];
   let pendingType: string | null = null;
 
-  for (const line of lines) {
-    const trimmed = line.trim();
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i]!.trim();
     if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) {
       continue;
     }
@@ -448,12 +460,26 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
     if (typeMatch) {
       const typeKind = typeMatch[1] as IndexEntry["kind"];
       const name = typeMatch[2]!;
-      entries.push({ symbol: name, kind: typeKind, filePath: relPath });
+
+      let fullDecl = trimmed.slice(typeMatch.index + typeMatch[0].length);
+      if (!trimmed.includes("{") && !trimmed.includes(";")) {
+        for (let j = i + 1; j < lines.length && j <= i + 5; j++) {
+          const next = lines[j]!.trim();
+          if (!next || next.startsWith("//") || next.startsWith("/*") || next.startsWith("*")) continue;
+          fullDecl += " " + next;
+          if (next.includes("{") || next.includes(";")) break;
+        }
+      }
+
+      const baseTypes = parseBaseTypes(fullDecl);
+      const entry: IndexEntry = { symbol: name, kind: typeKind, filePath: relPath };
+      if (baseTypes.length > 0) entry.baseTypes = baseTypes;
+      entries.push(entry);
+
       if (opens > closes) {
         typeStack.push(name);
         typeDepths.push(depth + opens);
       } else if (opens === 0) {
-        // Allman style: opening brace comes on the next line
         pendingType = name;
       }
     } else if (pendingType && opens > closes) {
@@ -494,6 +520,62 @@ function countChar(s: string, ch: string): number {
   return count;
 }
 
+function parseBaseTypes(declarationText: string): string[] {
+  const whereIdx = declarationText.search(/\bwhere\b/);
+  const text = whereIdx >= 0 ? declarationText.slice(0, whereIdx) : declarationText;
+
+  let colonIdx = -1;
+  let angleDepth = 0;
+  let parenDepth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (ch === "<") angleDepth++;
+    else if (ch === ">") angleDepth--;
+    else if (ch === "(") parenDepth++;
+    else if (ch === ")") parenDepth--;
+    else if (ch === ":" && angleDepth === 0 && parenDepth === 0) {
+      colonIdx = i;
+      break;
+    }
+    if (ch === "{") return [];
+  }
+
+  if (colonIdx < 0) return [];
+
+  let baseText = text.slice(colonIdx + 1);
+  const braceIdx = baseText.indexOf("{");
+  if (braceIdx >= 0) baseText = baseText.slice(0, braceIdx);
+  const semiIdx = baseText.indexOf(";");
+  if (semiIdx >= 0) baseText = baseText.slice(0, semiIdx);
+
+  return splitRespectingGenerics(baseText)
+    .map((p) => stripGenerics(p.trim()))
+    .filter((p) => p.length > 0 && /^\w+$/.test(p));
+}
+
+function splitRespectingGenerics(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const ch of text) {
+    if (ch === "<") depth++;
+    else if (ch === ">") depth--;
+    else if (ch === "," && depth === 0) {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) parts.push(current);
+  return parts;
+}
+
+function stripGenerics(name: string): string {
+  const idx = name.indexOf("<");
+  return idx >= 0 ? name.slice(0, idx).trim() : name;
+}
+
 export function filterCsFiles(files: string[]): string[] {
   return files.filter((f) => f.endsWith(".cs") && !isGenerated(f));
 }
@@ -512,6 +594,42 @@ async function tryReadFile(
     if (err instanceof GitError) return undefined;
     throw err;
   }
+}
+
+// ── Reference search ──
+
+export function countReferences(source: string, keyword: string): number {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp("\\b" + escaped + "\\b", "g");
+  const matches = source.match(re);
+  return matches ? matches.length : 0;
+}
+
+export async function searchReferences(
+  repoDir: string,
+  pkg: PackageConfig,
+  keyword: string,
+  maxFiles = 50,
+): Promise<FileReference[]> {
+  const allFiles = await listFiles(repoDir, pkg.pathInRepo + "/");
+  const csFiles = filterCsFiles(allFiles);
+
+  const contents = await Promise.all(
+    csFiles.map(async (f) => ({ filePath: f, content: await tryReadFile(repoDir, f) })),
+  );
+
+  const results: FileReference[] = [];
+  for (const { filePath, content } of contents) {
+    if (content === undefined) continue;
+    const count = countReferences(content, keyword);
+    if (count > 0) {
+      const relPath = filePath.slice(pkg.pathInRepo.length + 1);
+      results.push({ filePath: relPath, count });
+    }
+  }
+
+  results.sort((a, b) => b.count - a.count);
+  return results.slice(0, maxFiles);
 }
 
 interface TypeInfo {

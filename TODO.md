@@ -49,6 +49,7 @@
 | 17 | Add `keyword` + `exactMatch` params to `dig_signatures` | High | done | 85a04d4 | `src/tools/digSignatures.ts`, `src/tools/digSignatures.test.ts` |
 | 18 | Split `dig_overview` into `dig_repo_overview`, `dig_package_overview`, `dig_package_files` | High | done | 2dd3837 | `src/tools/digRepoOverview.ts`, `src/tools/digPackageOverview.ts`, `src/tools/digPackageFiles.ts`, `src/sourceExtractor.ts`, `src/index.ts` |
 | 20 | Add cross-package search to `dig_lookup` | High | done | 81612b3 | `src/tools/digLookup.ts`, `src/tools/digLookup.test.ts`, `DESIGN.md` |
+| 21 | Add `implements` + `references` modes to `dig_lookup` | High | done | 09d3e33 | `src/sourceExtractor.ts`, `src/tools/digLookup.ts`, `src/sourceExtractor.test.ts`, `src/tools/digLookup.test.ts`, `DESIGN.md` |
 | 9 | Prototype-pollution hardening on `JSON.parse` (SEC #7) | Medium | — | `JSON.parse(raw) as T` trusts shape. Construct fresh objects with only known fields. Low practical impact but cheap defense-in-depth. | `src/config.ts`, `src/cacheManager.ts` |
 | 10 | Cap fan-out in `discoverPackages` (SEC #8) | Medium | — | Unbounded `Promise.all` over all candidate dirs. `.slice(0, MAX)` or concurrency limiter. Log warning if cap hit. | `src/config.ts` |
 | 12 | Low/info items: defensive filePath in readFile, skip symlinks, confirm SDK Zod enforcement (SEC #11, #12, #13) | Low | — | Belt-and-braces path validation in `gitClient.readFile`; `lstat` to skip symlinks in `discoverPackages`; manual test to confirm SDK validates Zod schemas pre-handler. | `src/gitClient.ts`, `src/config.ts` |
