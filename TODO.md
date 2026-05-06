@@ -66,3 +66,4 @@
 | 1 | Enhanced type headings with generics + modifiers | `EntityBase (class)` → `EntityBase<TId> (abstract class)` — requires parsing generics from source | `src/tools/digSignatures.ts`, `src/sourceExtractor.ts` | done | 3b599e1 |
 | 7 | Clean Code refactoring | Extract shared helpers (error, package lookup, cache lifecycle, repo-ready wrapper), unify cross-package search, consistent error handling | `src/tools/*.ts`, `src/cacheManager.ts`, `CLAUDE.md` | done | 9cea1ff |
 | 8 | Signature stripping batch | Strip `public` keyword, boilerplate methods, XML doc comments, private members; expand NOT_METHOD exclusion | `src/sourceExtractor.ts` | done | 92caf9e |
+| 9 | Signature output cleanup | Strip namespace/using statements, CompareTo boilerplate, remove generated file headers, drop unused commitHash params | `src/sourceExtractor.ts`, `src/tools/digSignatures.ts`, `src/tools/digPackageOverview.ts` | done | d92068d |

@@ -79,7 +79,6 @@ export async function digPackageOverview(
       const overview = await extractOverview(
         result.sourcePath,
         pkg,
-        result.currentHash,
       );
       await writeOverview(pkg, overview);
 

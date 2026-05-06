@@ -5,9 +5,6 @@ import { GitError, listFiles, readFile } from "./gitClient.js";
 
 const GENERATED_SUFFIXES = [".g.cs", ".generated.cs", ".Designer.cs"];
 const DOC_FILES = ["README.md", "CONVENTIONS.md", "ARCHITECTURE.md"];
-const SIGNATURE_HEADER_PREFIX = "// GENERATED — read only —";
-const SIGNATURE_HEADER_SUFFIX =
-  "// Do not edit. Re-generated automatically when source changes.";
 
 // ── Regex patterns ──
 
@@ -60,7 +57,6 @@ export interface FileReference {
 export async function extractOverview(
   repoDir: string,
   pkg: PackageConfig,
-  _commitHash: string,
 ): Promise<string> {
   const allFiles = await listFiles(repoDir, pkg.pathInRepo + "/");
 
@@ -134,7 +130,6 @@ export async function extractOverview(
 export async function extractSignatures(
   repoDir: string,
   pkg: PackageConfig,
-  commitHash: string,
 ): Promise<Array<{ filePath: string; content: string }>> {
   const allFiles = await listFiles(repoDir, pkg.pathInRepo + "/");
   const csFiles = filterCsFiles(allFiles);
@@ -142,11 +137,6 @@ export async function extractSignatures(
   const contents = await Promise.all(
     csFiles.map((p) => tryReadFile(repoDir, p)),
   );
-
-  const shortHash = commitHash.slice(0, 8);
-  const header =
-    `${SIGNATURE_HEADER_PREFIX} ${pkg.name} @ commit ${shortHash}\n` +
-    `${SIGNATURE_HEADER_SUFFIX}\n\n`;
 
   const results: Array<{ filePath: string; content: string }> = [];
 
@@ -158,7 +148,7 @@ export async function extractSignatures(
     const relPath = filePath.slice(pkg.pathInRepo.length + 1);
     const stripped = cleanSignatureOutput(stripCsBody(source));
 
-    results.push({ filePath: relPath, content: header + stripped });
+    results.push({ filePath: relPath, content: stripped });
   }
 
   results.sort((a, b) => a.filePath.localeCompare(b.filePath));
@@ -292,8 +282,11 @@ export function parseIndex(raw: string): IndexEntry[] {
 
 // ── Signature cleanup ──
 
+const NAMESPACE_RE = /^\s*namespace\s/;
+const USING_RE = /^\s*using\s/;
 const PRIVATE_START_RE = /^\s*private\s/;
 const BOILERPLATE_RE = /\boverride\b[^;{]*\b(?:Equals|GetHashCode|ToString)\b/;
+const COMPARETO_RE = /\bCompareTo\s*\(/;
 const OPERATOR_RE = /\bstatic\b[^;{]*\boperator\b/;
 const PUBLIC_START_RE = /^(\s*)public\s+/;
 
@@ -316,13 +309,15 @@ export function cleanSignatureOutput(stripped: string): string {
     }
 
     if (trimmed.startsWith("///")) continue;
+    if (NAMESPACE_RE.test(line)) continue;
+    if (USING_RE.test(line)) continue;
 
     if (PRIVATE_START_RE.test(line)) {
       if (!endsDeclaration(trimmed)) skipping = true;
       continue;
     }
 
-    if (BOILERPLATE_RE.test(trimmed) || OPERATOR_RE.test(trimmed)) {
+    if (BOILERPLATE_RE.test(trimmed) || COMPARETO_RE.test(trimmed) || OPERATOR_RE.test(trimmed)) {
       if (!endsDeclaration(trimmed)) skipping = true;
       continue;
     }

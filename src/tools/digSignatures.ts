@@ -86,7 +86,7 @@ export async function digSignatures(
       if (indexRaw === undefined && sigsCached.length === 0) {
         const [idx, extracted] = await Promise.all([
           extractIndex(result.sourcePath, pkg),
-          extractSignatures(result.sourcePath, pkg, result.currentHash),
+          extractSignatures(result.sourcePath, pkg),
         ]);
         indexEntries = idx;
         indexRaw = serializeIndex(idx);
@@ -100,7 +100,7 @@ export async function digSignatures(
         indexRaw = serializeIndex(indexEntries);
         await writeIndex(pkg, indexRaw);
       } else if (sigsCached.length === 0) {
-        const extracted = await extractSignatures(result.sourcePath, pkg, result.currentHash);
+        const extracted = await extractSignatures(result.sourcePath, pkg);
         await Promise.all(
           extracted.map((sig) => writeSignature(pkg, sig.filePath, sig.content)),
         );

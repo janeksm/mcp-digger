@@ -618,7 +618,7 @@ describe("extractOverview", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const overview = await extractOverview(repoDir, pkg, "abc123def456");
+    const overview = await extractOverview(repoDir, pkg);
 
     expect(overview).toMatch(/^# MyLib\n/);
   });
@@ -630,7 +630,7 @@ describe("extractOverview", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const overview = await extractOverview(repoDir, pkg, "abc123");
+    const overview = await extractOverview(repoDir, pkg);
 
     expect(overview).toContain("Core utilities for the platform.");
   });
@@ -642,7 +642,7 @@ describe("extractOverview", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const overview = await extractOverview(repoDir, pkg, "abc123");
+    const overview = await extractOverview(repoDir, pkg);
 
     expect(overview).toContain("Use Result<T> for errors.");
   });
@@ -660,7 +660,7 @@ describe("extractOverview", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const overview = await extractOverview(repoDir, pkg, "abc123");
+    const overview = await extractOverview(repoDir, pkg);
 
     expect(overview).toContain("## Key Interfaces");
     expect(overview).toContain("**IService** — Core service contract.");
@@ -679,7 +679,7 @@ describe("extractOverview", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const overview = await extractOverview(repoDir, pkg, "abc123");
+    const overview = await extractOverview(repoDir, pkg);
 
     expect(overview).toContain("## Abstract Classes");
     expect(overview).toContain("**Entity<TId>** — Base entity class.");
@@ -698,7 +698,7 @@ describe("extractOverview", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const overview = await extractOverview(repoDir, pkg, "abc123");
+    const overview = await extractOverview(repoDir, pkg);
 
     expect(overview).toContain(
       "**IRepo<T>** — Generic repository for managing entities.",
@@ -713,7 +713,7 @@ describe("extractOverview", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const overview = await extractOverview(repoDir, pkg, "abc123");
+    const overview = await extractOverview(repoDir, pkg);
 
     expect(overview).not.toContain("## Source Files");
     expect(overview).not.toContain("Domain/User.cs");
@@ -726,7 +726,7 @@ describe("extractOverview", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const overview = await extractOverview(repoDir, pkg, "abc123");
+    const overview = await extractOverview(repoDir, pkg);
 
     expect(overview).toContain("# MyLib");
     expect(overview).not.toContain("## Source Files");
@@ -738,7 +738,7 @@ describe("extractOverview", () => {
 // ── extractSignatures ──
 
 describe("extractSignatures", () => {
-  it("returns stripped .cs files with header", async () => {
+  it("returns stripped .cs files without header or namespace", async () => {
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/Service.cs": [
         "namespace MyLib;",
@@ -753,13 +753,12 @@ describe("extractSignatures", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const sigs = await extractSignatures(repoDir, pkg, "abc123def456");
+    const sigs = await extractSignatures(repoDir, pkg);
 
     expect(sigs).toHaveLength(1);
     expect(sigs[0]!.filePath).toBe("Service.cs");
-    expect(sigs[0]!.content).toContain(
-      "// GENERATED — read only — MyLib @ commit abc123de",
-    );
+    expect(sigs[0]!.content).not.toContain("GENERATED");
+    expect(sigs[0]!.content).not.toContain("namespace");
     expect(sigs[0]!.content).toContain("class Service");
     expect(sigs[0]!.content).not.toContain("public class");
     expect(sigs[0]!.content).toContain("void Run()");
@@ -775,7 +774,7 @@ describe("extractSignatures", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const sigs = await extractSignatures(repoDir, pkg, "abc123");
+    const sigs = await extractSignatures(repoDir, pkg);
 
     expect(sigs.map((s) => s.filePath)).toEqual([
       "A.cs",
@@ -792,7 +791,7 @@ describe("extractSignatures", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const sigs = await extractSignatures(repoDir, pkg, "abc123");
+    const sigs = await extractSignatures(repoDir, pkg);
 
     expect(sigs).toHaveLength(1);
     expect(sigs[0]!.filePath).toBe("Real.cs");
@@ -805,7 +804,7 @@ describe("extractSignatures", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const sigs = await extractSignatures(repoDir, pkg, "abc123");
+    const sigs = await extractSignatures(repoDir, pkg);
 
     expect(sigs[0]!.filePath).toBe("Domain/Entity.cs");
   });
@@ -825,7 +824,7 @@ describe("extractSignatures", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const sigs = await extractSignatures(repoDir, pkg, "abc123");
+    const sigs = await extractSignatures(repoDir, pkg);
 
     const content = sigs[0]!.content;
     expect(content).not.toContain("///");
@@ -841,7 +840,7 @@ describe("extractSignatures", () => {
     });
     const pkg = makePkg("MyLib", "src/MyLib");
 
-    const sigs = await extractSignatures(repoDir, pkg, "abc123");
+    const sigs = await extractSignatures(repoDir, pkg);
 
     expect(sigs).toEqual([]);
   });
