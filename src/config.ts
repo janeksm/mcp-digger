@@ -116,6 +116,8 @@ const DEFAULT_SOURCE_ROOT = "src";
 const DEFAULT_AUTH_STRATEGY: AuthStrategy = "auto";
 const VALID_AUTH_STRATEGIES: ReadonlySet<AuthStrategy> = new Set<AuthStrategy>(["auto", "pat", "none"]);
 
+const MAX_DISCOVERED_PACKAGES = 200;
+
 const TEST_PROJECT_SUFFIXES = [
   ".Tests",
   ".Specs",
@@ -359,7 +361,8 @@ export function loadConfig(
   let configFile: ConfigFile & { authStrategy?: unknown };
   try {
     const raw = fs.readFileSync(configPath, "utf-8");
-    configFile = JSON.parse(raw) as ConfigFile & { authStrategy?: unknown };
+    const parsed = JSON.parse(raw) as ConfigFile & { authStrategy?: unknown };
+    configFile = { ...parsed };
   } catch (e) {
     const err = e as NodeJS.ErrnoException;
     if (err.code === "ENOENT") {
@@ -617,8 +620,8 @@ export async function discoverPackages(
     return [];
   }
 
-  const candidates = entries.filter((e) => {
-    if (!e.isDirectory()) return false;
+  const allCandidates = entries.filter((e) => {
+    if (!e.isDirectory() || e.isSymbolicLink()) return false;
     if (TEST_PROJECT_SUFFIXES.some((s) => e.name.endsWith(s))) return false;
     if (!isValidPackageName(e.name)) {
       debug("config", "discoverPackages: skipping directory with invalid name:", e.name);
@@ -626,6 +629,11 @@ export async function discoverPackages(
     }
     return true;
   });
+
+  if (allCandidates.length > MAX_DISCOVERED_PACKAGES) {
+    debug("config", `discoverPackages: ${allCandidates.length} candidates exceeds cap of ${MAX_DISCOVERED_PACKAGES}, truncating`);
+  }
+  const candidates = allCandidates.slice(0, MAX_DISCOVERED_PACKAGES);
 
   const results = await Promise.all(
     candidates.map(async (entry) => {

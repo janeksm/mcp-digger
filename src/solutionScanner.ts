@@ -154,7 +154,8 @@ export async function readScanCache(cacheDir: string): Promise<ScanResult | null
   const target = path.join(cacheDir, SCAN_CACHE_FILENAME);
   try {
     const raw = await fs.promises.readFile(target, "utf-8");
-    return JSON.parse(raw) as ScanResult;
+    const parsed = JSON.parse(raw) as ScanResult;
+    return { ...parsed };
   } catch {
     return null;
   }

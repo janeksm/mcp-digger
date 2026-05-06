@@ -213,4 +213,29 @@ describe("writeScanCache / readScanCache", () => {
     const result = await readScanCache(cacheDir);
     expect(result).toBeNull();
   });
+
+  it("readScanCache ignores __proto__ keys (prototype-pollution defense)", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(
+      scanCachePath(cacheDir),
+      JSON.stringify({
+        scannedAt: "2026-01-01",
+        workspaceRoot: "/tmp",
+        solutionFiles: [],
+        csprojFiles: [],
+        directoryPackagesProps: [],
+        directoryBuildProps: [],
+        directoryBuildTargets: [],
+        packages: ["Test"],
+        warnings: [],
+        __proto__: { polluted: true },
+      }),
+    );
+
+    const result = await readScanCache(cacheDir);
+    expect(result).not.toBeNull();
+    expect(result!.packages).toEqual(["Test"]);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
 });

@@ -228,6 +228,27 @@ describe("readFile", () => {
 
     await expect(readFile(repoDir, "nope.txt")).rejects.toThrow(GitError);
   });
+
+  it("rejects path traversal with '..' segments", async () => {
+    const repoDir = await createRepo({ "exists.txt": "yes" });
+
+    await expect(readFile(repoDir, "../escape")).rejects.toThrow("unsafe file path");
+    await expect(readFile(repoDir, "sub/../../escape")).rejects.toThrow("unsafe file path");
+  });
+
+  it("allows '..' within segment names (not traversal)", async () => {
+    const repoDir = await createRepo({ "My..Lib/A.cs": "content" });
+
+    const content = await readFile(repoDir, "My..Lib/A.cs");
+
+    expect(content).toBe("content");
+  });
+
+  it("rejects paths containing null bytes", async () => {
+    const repoDir = await createRepo({ "exists.txt": "yes" });
+
+    await expect(readFile(repoDir, "file\0.txt")).rejects.toThrow("unsafe file path");
+  });
 });
 
 // ── listFiles ──

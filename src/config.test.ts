@@ -858,6 +858,20 @@ describe("discoverPackages", () => {
     expect(result[0]!.pathInRepo).toBe("libs/packages/MyCompany.Core");
   });
 
+  it("caps discovery at MAX_DISCOVERED_PACKAGES (200)", async () => {
+    const repoDir = path.join(tmpDir, "repo");
+    const srcDir = path.join(repoDir, "src");
+    for (let i = 0; i < 210; i++) {
+      const name = `Pkg${String(i).padStart(3, "0")}`;
+      const pkgDir = path.join(srcDir, name);
+      fs.mkdirSync(pkgDir, { recursive: true });
+      fs.writeFileSync(path.join(pkgDir, `${name}.csproj`), "<Project />");
+    }
+    const rc = makeRepoConfig();
+    const result = await discoverPackages(repoDir, rc, "/tmp/cache");
+    expect(result.length).toBeLessThanOrEqual(200);
+  });
+
   it("skips directories with invalid names", async () => {
     const repoDir = path.join(tmpDir, "repo");
     const srcDir = path.join(repoDir, "src");

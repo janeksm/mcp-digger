@@ -251,6 +251,9 @@ export async function readFile(
   repoDir: string,
   filePath: string,
 ): Promise<string> {
+  if (filePath.includes("\0") || /(^|\/)\.\.($|\/)/.test(filePath)) {
+    throw new GitError(`unsafe file path: ${filePath}`, null, "");
+  }
   const { stdout } = await git(["-C", repoDir, "show", `HEAD:${filePath}`]);
   return stdout;
 }

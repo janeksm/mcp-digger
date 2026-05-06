@@ -100,6 +100,18 @@ describe("isFresh / markFresh", () => {
 
     expect(await isFresh(cacheDir, "myrepo", "anything")).toBe(false);
   });
+
+  it("ignores __proto__ keys in meta JSON (prototype-pollution defense)", async () => {
+    const metaDir = path.join(cacheDir, "meta");
+    fs.mkdirSync(metaDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(metaDir, "myrepo.json"),
+      '{"commitHash":"abc123","__proto__":{"polluted":true}}',
+    );
+
+    expect(await isFresh(cacheDir, "myrepo", "abc123")).toBe(true);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
 });
 
 // ── invalidate ──

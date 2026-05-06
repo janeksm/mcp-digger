@@ -185,7 +185,9 @@ async function readMeta(cacheDir: string, repoName: string): Promise<RepoMeta | 
   try {
     const raw = await fs.promises.readFile(metaFilePath(cacheDir, repoName), "utf-8");
     const parsed = JSON.parse(raw) as RepoMeta;
-    if (typeof parsed.commitHash === "string") return parsed;
+    if (typeof parsed.commitHash === "string") {
+      return { commitHash: parsed.commitHash, updatedAt: parsed.updatedAt ?? "" };
+    }
     return undefined;
   } catch {
     return undefined;
