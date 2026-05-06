@@ -13,6 +13,7 @@ interface RepoMeta {
 const OVERVIEW_FILE = "overview.md";
 const SIGNATURES_DIR = "signatures";
 const INDEX_FILE = "index.dat";
+const TMP_SUFFIX = ".tmp";
 
 // ── Public API ──
 
@@ -48,7 +49,7 @@ export async function markFresh(
     commitHash,
     updatedAt: new Date().toISOString(),
   };
-  const tmpPath = metaPath + ".tmp";
+  const tmpPath = metaPath + TMP_SUFFIX;
   await fs.promises.writeFile(tmpPath, JSON.stringify(meta, null, 2));
   await fs.promises.rename(tmpPath, metaPath);
 }
@@ -108,7 +109,7 @@ export async function writeSignature(
 ): Promise<void> {
   const sigPath = path.join(pkg.cachePath, SIGNATURES_DIR, relPath);
   await fs.promises.mkdir(path.dirname(sigPath), { recursive: true });
-  const tmpPath = sigPath + ".tmp";
+  const tmpPath = sigPath + TMP_SUFFIX;
   await fs.promises.writeFile(tmpPath, content);
   await fs.promises.rename(tmpPath, sigPath);
 }
@@ -152,7 +153,7 @@ export async function writeIndex(
 ): Promise<void> {
   await fs.promises.mkdir(pkg.cachePath, { recursive: true });
   const target = path.join(pkg.cachePath, INDEX_FILE);
-  const tmpPath = target + ".tmp";
+  const tmpPath = target + TMP_SUFFIX;
   await fs.promises.writeFile(tmpPath, content);
   await fs.promises.rename(tmpPath, target);
 }

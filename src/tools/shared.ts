@@ -1,4 +1,9 @@
 import { z } from "zod";
+import type { DiggerConfig, PackageConfig, RepoConfig } from "../config.js";
+import { findPackage, formatUnknownPackage } from "../config.js";
+import { error as logError } from "../logger.js";
+import { withRepoLock } from "../repoLock.js";
+import { ensureReady, type RepoReadyResult } from "../repoManager.js";
 
 export const PACKAGE_NAME_PARAM = z.string().describe("Exact name of the internal NuGet package (e.g. 'MyCompany.Core')");
 
@@ -30,3 +35,35 @@ export const TOOL_ANNOTATIONS = {
   idempotentHint: true,
   openWorldHint: true,
 } as const;
+
+export function extractErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+export function requirePackage(
+  config: DiggerConfig,
+  packageName: string,
+): { pkg: PackageConfig; repo: RepoConfig } | ToolResult {
+  const pkg = findPackage(config, packageName);
+  if (!pkg) return toolError(formatUnknownPackage(config, packageName));
+  const repo = config.repos.find((r) => r.name === pkg.repoName)!;
+  return { pkg, repo };
+}
+
+export async function withRepoReady(
+  repo: RepoConfig,
+  config: DiggerConfig,
+  toolName: string,
+  fn: (result: RepoReadyResult) => Promise<ToolResult>,
+): Promise<ToolResult> {
+  return withRepoLock(repo.name, async () => {
+    try {
+      const result = await ensureReady(repo, config);
+      return await fn(result);
+    } catch (err) {
+      const msg = extractErrorMessage(err);
+      logError(toolName, `repo '${repo.name}':`, msg);
+      return toolError(`Repo '${repo.name}': ${msg}`);
+    }
+  });
+}

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
+import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, extractErrorMessage, requirePackage, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
 import {
   invalidate,
   isFresh,
@@ -11,7 +11,6 @@ import {
   writeSignature,
 } from "../cacheManager.js";
 import type { DiggerConfig } from "../config.js";
-import { findPackage, formatUnknownPackage } from "../config.js";
 import { debug, error } from "../logger.js";
 import { withRepoLock } from "../repoLock.js";
 import { ensureReady } from "../repoManager.js";
@@ -66,10 +65,9 @@ export async function digSignatures(
   exactMatch: boolean = false,
 ): Promise<ToolResult> {
   debug("digSignatures", "called for", packageName, "keyword=", keyword, "exactMatch=", exactMatch);
-  const pkg = findPackage(config, packageName);
-  if (!pkg) return toolError(formatUnknownPackage(config, packageName));
-
-  const repo = config.repos.find((r) => r.name === pkg.repoName)!;
+  const resolved = requirePackage(config, packageName);
+  if ("text" in resolved) return resolved;
+  const { pkg, repo } = resolved;
 
   return withRepoLock(repo.name, async () => {
     try {
@@ -131,7 +129,7 @@ export async function digSignatures(
 
       return toolSuccess(formatSignatures(packageName, keyword, matchedSigs, matchedFiles));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = extractErrorMessage(err);
       error("digSignatures", `package '${packageName}':`, msg);
 
       const [staleIndex, staleSigs] = await Promise.all([

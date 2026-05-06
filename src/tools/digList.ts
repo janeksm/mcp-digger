@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { TOOL_ANNOTATIONS } from "./shared.js";
+import { TOOL_ANNOTATIONS, extractErrorMessage } from "./shared.js";
 import type { DiggerConfig } from "../config.js";
 import { debug, error } from "../logger.js";
 import { ensureAllReady } from "../repoManager.js";
@@ -37,7 +37,7 @@ export async function digList(config: DiggerConfig): Promise<string> {
   try {
     await ensureAllReady(config);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = extractErrorMessage(err);
     error("digList", "ensureAllReady failed:", msg);
     resolveWarning = msg;
   }

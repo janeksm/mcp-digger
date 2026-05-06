@@ -8,6 +8,21 @@ Node.js/TypeScript MCP server that gives Claude Code progressive access to inter
 - Use the mcp-builder skill when you need deeper understanding of MCP best practices, protocol concepts, tool design patterns, annotations, input/output schemas, or transport options.
 - Don't combine `cd` with other commands (e.g. `cd /path && git status`). Run commands directly using absolute paths instead (e.g. `git -C /path status`). Compound commands can't be matched against the allowed permissions list, causing unnecessary confirmation prompts.
 
+## Clean Code (Pragmatic)
+
+Follow these principles as defaults, not dogma. Break any rule when it clearly hurts readability or adds unnecessary complexity.
+
+- **Naming is design.** Functions, variables, and types should reveal intent. If you need a comment to explain *what* something does, rename it instead. Avoid abbreviations unless universally understood (`config`, `pkg`, `idx` are fine; `prfx`, `dsc` are not).
+- **Functions do one thing.** A function should have a single reason to change. If a function name needs "and" to describe it, split it. Keep functions short enough to read without scrolling — but don't split just to hit an arbitrary line count.
+- **One level of abstraction per function.** Don't mix high-level orchestration with low-level string manipulation in the same function body. Extract the lower level into a named helper.
+- **Minimal parameters.** Prefer 0–2 parameters. When a function needs 3+, consider grouping related params into an object/config. Booleans as parameters are a smell — they usually mean the function does two things.
+- **No side effects unless the name says so.** A function named `getX` or `findX` should not modify state. Functions that mutate should have verbs like `update`, `set`, `write`, `mark`.
+- **Early returns over nesting.** Guard clauses at the top, happy path at normal indentation. Avoid `else` after `return`.
+- **DRY, but not at the cost of coupling.** Extract duplication only when the duplicated pieces change for the same reason. Three similar lines are better than a premature abstraction that couples unrelated concerns.
+- **Boy Scout Rule.** Leave code cleaner than you found it — but only in the area you're already touching. Don't refactor unrelated code in the same change.
+- **Tests are documentation.** Test names should read as specifications. Arrange-Act-Assert structure. One logical assertion per test (multiple `expect` calls are fine if they verify one behavior).
+- **Error handling is behavior.** Don't ignore errors silently. Return meaningful messages (this project: tools never throw, they return `toolError()`). Handle errors at the right level — where you have enough context to do something useful.
+
 ## Build & Test
 
 ```bash
@@ -67,4 +82,4 @@ Env vars (optional path overrides only — no secrets):
 
 ## Implementation Status
 
-Progress tracked in [TODO.md](TODO.md). Phase 1 (steps 1–17) is complete. Phase 2 (MCP compliance & security hardening) is in progress.
+Progress tracked in [TODO.md](TODO.md). Phase 1 (steps 1–17) is complete. Phase 2 (MCP compliance & security hardening) is mostly complete (4 remaining). Phase 3 (signature output quality) is in progress.

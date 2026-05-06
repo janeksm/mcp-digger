@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { filterPrefix, type DiggerConfig, type GitAuth, type RepoConfig } from "../config.js";
-import { TOOL_ANNOTATIONS } from "./shared.js";
+import { TOOL_ANNOTATIONS, extractErrorMessage } from "./shared.js";
 import * as gitClient from "../gitClient.js";
 import type { LsRemoteResult } from "../gitClient.js";
 import { debug, error } from "../logger.js";
@@ -71,7 +71,7 @@ export async function digStatus(config: DiggerConfig): Promise<string> {
       scan = await scanWorkspace(config.workspaceRoot);
       await writeScanCache(config.cacheDir, scan);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = extractErrorMessage(err);
       error("digStatus", "scan failed:", msg);
     }
   }
@@ -153,7 +153,7 @@ export async function digStatus(config: DiggerConfig): Promise<string> {
           repoIssues.push("local repo invalid");
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = extractErrorMessage(err);
         error("digStatus", `repo '${repo.name}' local repo check failed:`, msg);
         sections.push(`- **Local repo valid:** FAILED — ${msg}`);
         repoIssues.push("local repo check error");

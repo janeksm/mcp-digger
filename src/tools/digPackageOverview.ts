@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
+import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, extractErrorMessage, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
 import { z } from "zod";
 import {
   isFresh,
@@ -85,7 +85,7 @@ export async function digPackageOverview(
 
       return toolSuccess(overview.trimEnd());
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = extractErrorMessage(err);
       error("digPackageOverview", `repo '${repo.name}':`, msg);
 
       const pkg = repo.packages.find((p) => p.name === packageName);

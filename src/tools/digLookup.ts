@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
+import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, extractErrorMessage, requirePackage, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
 import {
   invalidate,
   isFresh,
@@ -9,7 +9,6 @@ import {
   writeIndex,
 } from "../cacheManager.js";
 import type { DiggerConfig, PackageConfig } from "../config.js";
-import { findPackage, formatUnknownPackage } from "../config.js";
 import { debug, error } from "../logger.js";
 import { withRepoLock } from "../repoLock.js";
 import { ensureAllReady, ensureReady } from "../repoManager.js";
@@ -86,48 +85,28 @@ export async function digLookup(
   if (mode === "references") return digLookupReferences(config, packageName, keyword);
 
   if (packageName === undefined) {
-    return digLookupAllPackages(config, keyword);
+    return crossPackageIndexSearch(config, keyword, SYMBOL_SEARCH_OPTS);
   }
 
   debug("digLookup", "called for", packageName, "keyword=", keyword);
-  const pkg = findPackage(config, packageName);
-  if (!pkg) return toolError(formatUnknownPackage(config, packageName));
-
-  const repo = config.repos.find((r) => r.name === pkg.repoName)!;
+  const resolved = requirePackage(config, packageName);
+  if ("text" in resolved) return resolved;
+  const { pkg, repo } = resolved;
 
   return withRepoLock(repo.name, async () => {
     try {
       const result = await ensureReady(repo, config);
-
       const fresh = await isFresh(config.cacheDir, repo.name, result.currentHash);
+      if (!fresh) await invalidate(config.cacheDir, repo.name, repo.packages);
 
-      if (!fresh) {
-        await invalidate(config.cacheDir, repo.name, repo.packages);
+      const entries = await ensurePackageIndex(result.sourcePath, pkg, fresh);
+      if (!fresh) await markFresh(config.cacheDir, repo.name, result.currentHash);
+
+      if (entries.length === 0) {
+        return toolSuccess(`# ${packageName}\n\nNo .cs source files found.`);
       }
 
-      let indexRaw = fresh ? await readIndex(pkg) : undefined;
-
-      if (indexRaw === undefined) {
-        const entries = await extractIndex(result.sourcePath, pkg);
-
-        if (entries.length === 0) {
-          if (!fresh) {
-            await markFresh(config.cacheDir, repo.name, result.currentHash);
-          }
-          return toolSuccess(`# ${packageName}\n\nNo .cs source files found.`);
-        }
-
-        indexRaw = serializeIndex(entries);
-        await writeIndex(pkg, indexRaw);
-
-        if (!fresh) {
-          await markFresh(config.cacheDir, repo.name, result.currentHash);
-        }
-      }
-
-      const entries = parseIndex(indexRaw);
       const matches = searchIndex(entries, keyword);
-
       if (matches.length === 0) {
         return toolSuccess(
           `# ${packageName} — lookup: "${keyword}"\n\n` +
@@ -137,7 +116,7 @@ export async function digLookup(
 
       return toolSuccess(formatMatches(packageName, keyword, matches));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = extractErrorMessage(err);
       error("digLookup", `package '${packageName}':`, msg);
       const stale = await readIndex(pkg);
       if (stale) {
@@ -155,7 +134,24 @@ export async function digLookup(
   });
 }
 
-// ── Internal ──
+// ── Index helpers ──
+
+async function ensurePackageIndex(
+  sourcePath: string,
+  pkg: PackageConfig,
+  fresh: boolean,
+): Promise<IndexEntry[]> {
+  const indexRaw = fresh ? await readIndex(pkg) : undefined;
+  if (indexRaw !== undefined) return parseIndex(indexRaw);
+
+  const entries = await extractIndex(sourcePath, pkg);
+  if (entries.length > 0) {
+    await writeIndex(pkg, serializeIndex(entries));
+  }
+  return entries;
+}
+
+// ── Search functions ──
 
 const MAX_CROSS_PACKAGE_MATCHES = 100;
 
@@ -167,6 +163,30 @@ interface PackageMatches {
 function searchIndex(entries: IndexEntry[], keyword: string): IndexEntry[] {
   const lower = keyword.toLowerCase();
   return entries.filter((e) => e.symbol.toLowerCase().includes(lower));
+}
+
+function searchIndexForImplementors(entries: IndexEntry[], keyword: string): IndexEntry[] {
+  const lower = keyword.toLowerCase();
+  return entries.filter(
+    (e) => e.baseTypes?.some((bt) => bt.toLowerCase() === lower) ?? false,
+  );
+}
+
+// ── Single-package formatting ──
+
+function formatMatchLine(m: IndexEntry): string {
+  if (m.kind === "method") {
+    return `- **${m.symbol}** (method on ${m.parentType}) — \`${m.filePath}\``;
+  }
+  const { displayName, kindLabel } = formatEntryDisplay(m);
+  return `- **${displayName}** (${kindLabel}) — \`${m.filePath}\``;
+}
+
+function formatImplementsMatchLine(m: IndexEntry): string {
+  const { displayName, kindLabel } = formatEntryDisplay(m);
+  const bases = m.baseTypes?.join(", ") ?? "";
+  const baseSuffix = bases ? ` : ${bases}` : "";
+  return `- **${displayName}** (${kindLabel})${baseSuffix} — \`${m.filePath}\``;
 }
 
 function formatMatches(
@@ -190,247 +210,6 @@ function formatMatches(
   return lines.join("\n");
 }
 
-function formatMatchLine(m: IndexEntry): string {
-  if (m.kind === "method") {
-    return `- **${m.symbol}** (method on ${m.parentType}) — \`${m.filePath}\``;
-  }
-  const { displayName, kindLabel } = formatEntryDisplay(m);
-  return `- **${displayName}** (${kindLabel}) — \`${m.filePath}\``;
-}
-
-async function digLookupAllPackages(
-  config: DiggerConfig,
-  keyword: string,
-): Promise<ToolResult> {
-  debug("digLookup", "cross-package search keyword=", keyword);
-
-  const readyResults = await ensureAllReady(config);
-
-  const allResults: PackageMatches[] = [];
-  const warnings: string[] = [];
-  let totalMatches = 0;
-  let capped = false;
-
-  for (const repo of config.repos) {
-    const ready = readyResults.get(repo.name);
-
-    if (!ready || ready.error) {
-      const errMsg = ready?.error ?? "repo resolution failed";
-      warnings.push(`${repo.name}: ${errMsg}`);
-      await collectStaleMatches(repo.packages, keyword, allResults);
-      continue;
-    }
-
-    try {
-      const repoMatches = await withRepoLock(repo.name, async () => {
-        const fresh = await isFresh(config.cacheDir, repo.name, ready.currentHash);
-        if (!fresh) {
-          await invalidate(config.cacheDir, repo.name, repo.packages);
-        }
-
-        const matches: PackageMatches[] = [];
-        for (const pkg of repo.packages) {
-          let indexRaw = fresh ? await readIndex(pkg) : undefined;
-
-          if (indexRaw === undefined) {
-            const entries = await extractIndex(ready.sourcePath, pkg);
-            if (entries.length === 0) continue;
-            indexRaw = serializeIndex(entries);
-            await writeIndex(pkg, indexRaw);
-          }
-
-          const entries = parseIndex(indexRaw);
-          const pkgMatches = searchIndex(entries, keyword);
-          if (pkgMatches.length > 0) {
-            matches.push({ packageName: pkg.name, matches: pkgMatches });
-          }
-        }
-
-        if (!fresh) {
-          await markFresh(config.cacheDir, repo.name, ready.currentHash);
-        }
-
-        return matches;
-      });
-
-      for (const m of repoMatches) {
-        totalMatches += m.matches.length;
-        allResults.push(m);
-        if (totalMatches >= MAX_CROSS_PACKAGE_MATCHES) {
-          capped = true;
-          break;
-        }
-      }
-      if (capped) break;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      error("digLookup", `repo '${repo.name}':`, msg);
-      warnings.push(`${repo.name}: ${msg}`);
-      await collectStaleMatches(repo.packages, keyword, allResults);
-    }
-  }
-
-  if (allResults.length === 0 && warnings.length > 0) {
-    return toolError(
-      `# Cross-package lookup: "${keyword}"\n\nLookup failed.\n\n` +
-      warnings.map((w) => `- ${w}`).join("\n"),
-    );
-  }
-
-  if (allResults.length === 0) {
-    return toolSuccess(
-      `# Cross-package lookup: "${keyword}"\n\n` +
-      `No matches for '${keyword}' across any package. Try a broader term or call dig_list to see available packages.`,
-    );
-  }
-
-  return toolSuccess(formatCrossPackageResults(keyword, allResults, totalMatches, capped, warnings));
-}
-
-async function collectStaleMatches(
-  packages: PackageConfig[],
-  keyword: string,
-  results: PackageMatches[],
-): Promise<void> {
-  for (const pkg of packages) {
-    const stale = await readIndex(pkg);
-    if (stale) {
-      const entries = parseIndex(stale);
-      const pkgMatches = searchIndex(entries, keyword);
-      if (pkgMatches.length > 0) {
-        results.push({ packageName: pkg.name, matches: pkgMatches });
-      }
-    }
-  }
-}
-
-function formatCrossPackageResults(
-  keyword: string,
-  results: PackageMatches[],
-  totalMatches: number,
-  capped: boolean,
-  warnings: string[],
-): string {
-  const lines: string[] = [];
-  lines.push(`# Cross-package lookup: "${keyword}"`);
-  lines.push("");
-
-  const countLabel = capped
-    ? `first ${MAX_CROSS_PACKAGE_MATCHES} of ${totalMatches}+`
-    : String(totalMatches);
-  lines.push(
-    `Found ${countLabel} match${totalMatches === 1 ? "" : "es"} across ${results.length} package${results.length === 1 ? "" : "s"}:`,
-  );
-
-  for (const { packageName, matches } of results) {
-    lines.push("");
-    lines.push(`## ${packageName}`);
-    lines.push("");
-    for (const m of matches) {
-      lines.push(formatMatchLine(m));
-    }
-  }
-
-  lines.push("");
-  lines.push("Use dig_file or dig_signatures with the specific packageName and file path to read source.");
-
-  if (capped) {
-    lines.push("");
-    lines.push(`> **Note:** Results capped at ${MAX_CROSS_PACKAGE_MATCHES}. Narrow your keyword or specify a packageName.`);
-  }
-
-  if (warnings.length > 0) {
-    lines.push("");
-    lines.push("---");
-    lines.push("");
-    lines.push("> **Warnings:**");
-    for (const w of warnings) {
-      lines.push(`> - ${w}`);
-    }
-  }
-
-  return lines.join("\n");
-}
-
-// ── Implements mode ──
-
-function searchIndexForImplementors(entries: IndexEntry[], keyword: string): IndexEntry[] {
-  const lower = keyword.toLowerCase();
-  return entries.filter(
-    (e) => e.baseTypes?.some((bt) => bt.toLowerCase() === lower) ?? false,
-  );
-}
-
-function formatImplementsMatchLine(m: IndexEntry): string {
-  const { displayName, kindLabel } = formatEntryDisplay(m);
-  const bases = m.baseTypes?.join(", ") ?? "";
-  const baseSuffix = bases ? ` : ${bases}` : "";
-  return `- **${displayName}** (${kindLabel})${baseSuffix} — \`${m.filePath}\``;
-}
-
-async function digLookupImplements(
-  config: DiggerConfig,
-  packageName: string | undefined,
-  keyword: string,
-): Promise<ToolResult> {
-  if (packageName === undefined) {
-    return digLookupImplementsAllPackages(config, keyword);
-  }
-
-  debug("digLookup", "implements mode for", packageName, "keyword=", keyword);
-  const pkg = findPackage(config, packageName);
-  if (!pkg) return toolError(formatUnknownPackage(config, packageName));
-
-  const repo = config.repos.find((r) => r.name === pkg.repoName)!;
-
-  return withRepoLock(repo.name, async () => {
-    try {
-      const result = await ensureReady(repo, config);
-      const fresh = await isFresh(config.cacheDir, repo.name, result.currentHash);
-      if (!fresh) await invalidate(config.cacheDir, repo.name, repo.packages);
-
-      let indexRaw = fresh ? await readIndex(pkg) : undefined;
-      if (indexRaw === undefined) {
-        const entries = await extractIndex(result.sourcePath, pkg);
-        if (entries.length === 0) {
-          if (!fresh) await markFresh(config.cacheDir, repo.name, result.currentHash);
-          return toolSuccess(`# ${packageName} — implements: "${keyword}"\n\nNo .cs source files found.`);
-        }
-        indexRaw = serializeIndex(entries);
-        await writeIndex(pkg, indexRaw);
-        if (!fresh) await markFresh(config.cacheDir, repo.name, result.currentHash);
-      }
-
-      const entries = parseIndex(indexRaw);
-      const matches = searchIndexForImplementors(entries, keyword);
-
-      if (matches.length === 0) {
-        return toolSuccess(
-          `# ${packageName} — implements: "${keyword}"\n\n` +
-          `No types implementing '${keyword}' found. Try omitting packageName to search cross-package.`,
-        );
-      }
-
-      return toolSuccess(formatImplementsResults(packageName, keyword, matches));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      error("digLookup", `implements '${packageName}':`, msg);
-      const stale = await readIndex(pkg);
-      if (stale) {
-        const entries = parseIndex(stale);
-        const matches = searchIndexForImplementors(entries, keyword);
-        if (matches.length > 0) {
-          return toolSuccess(
-            formatImplementsResults(packageName, keyword, matches) +
-            `\n\n---\n\n> **Warning:** Index may be stale. ${msg}`,
-          );
-        }
-      }
-      return toolError(`# ${packageName}\n\nSource unavailable. ${msg}`);
-    }
-  });
-}
-
 function formatImplementsResults(
   packageName: string,
   keyword: string,
@@ -447,11 +226,41 @@ function formatImplementsResults(
   return lines.join("\n");
 }
 
-async function digLookupImplementsAllPackages(
+// ── Cross-package index search (shared by symbol + implements modes) ──
+
+interface CrossPackageIndexOpts {
+  modeLabel: string;
+  debugLabel: string;
+  searchFn: (entries: IndexEntry[], keyword: string) => IndexEntry[];
+  formatLineFn: (m: IndexEntry) => string;
+  countNoun: string;
+  noMatchMsg: (keyword: string) => string;
+}
+
+const SYMBOL_SEARCH_OPTS: CrossPackageIndexOpts = {
+  modeLabel: "lookup",
+  debugLabel: "cross-package search",
+  searchFn: searchIndex,
+  formatLineFn: formatMatchLine,
+  countNoun: "match",
+  noMatchMsg: (kw) => `No matches for '${kw}' across any package. Try a broader term or call dig_list to see available packages.`,
+};
+
+const IMPLEMENTS_SEARCH_OPTS: CrossPackageIndexOpts = {
+  modeLabel: "implements",
+  debugLabel: "cross-package implements",
+  searchFn: searchIndexForImplementors,
+  formatLineFn: formatImplementsMatchLine,
+  countNoun: "implementor",
+  noMatchMsg: (kw) => `No types implementing '${kw}' found across any package. Verify the exact type name.`,
+};
+
+async function crossPackageIndexSearch(
   config: DiggerConfig,
   keyword: string,
+  opts: CrossPackageIndexOpts,
 ): Promise<ToolResult> {
-  debug("digLookup", "cross-package implements keyword=", keyword);
+  debug("digLookup", opts.debugLabel, "keyword=", keyword);
 
   const readyResults = await ensureAllReady(config);
 
@@ -464,9 +273,8 @@ async function digLookupImplementsAllPackages(
     const ready = readyResults.get(repo.name);
 
     if (!ready || ready.error) {
-      const errMsg = ready?.error ?? "repo resolution failed";
-      warnings.push(`${repo.name}: ${errMsg}`);
-      await collectStaleImplementors(repo.packages, keyword, allResults);
+      warnings.push(`${repo.name}: ${ready?.error ?? "repo resolution failed"}`);
+      await collectStaleResults(repo.packages, keyword, opts.searchFn, allResults);
       continue;
     }
 
@@ -477,16 +285,8 @@ async function digLookupImplementsAllPackages(
 
         const matches: PackageMatches[] = [];
         for (const pkg of repo.packages) {
-          let indexRaw = fresh ? await readIndex(pkg) : undefined;
-          if (indexRaw === undefined) {
-            const entries = await extractIndex(ready.sourcePath, pkg);
-            if (entries.length === 0) continue;
-            indexRaw = serializeIndex(entries);
-            await writeIndex(pkg, indexRaw);
-          }
-
-          const entries = parseIndex(indexRaw);
-          const pkgMatches = searchIndexForImplementors(entries, keyword);
+          const entries = await ensurePackageIndex(ready.sourcePath, pkg, fresh);
+          const pkgMatches = opts.searchFn(entries, keyword);
           if (pkgMatches.length > 0) {
             matches.push({ packageName: pkg.name, matches: pkgMatches });
           }
@@ -503,40 +303,40 @@ async function digLookupImplementsAllPackages(
       }
       if (capped) break;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      error("digLookup", `implements repo '${repo.name}':`, msg);
+      const msg = extractErrorMessage(err);
+      error("digLookup", `${opts.modeLabel} repo '${repo.name}':`, msg);
       warnings.push(`${repo.name}: ${msg}`);
-      await collectStaleImplementors(repo.packages, keyword, allResults);
+      await collectStaleResults(repo.packages, keyword, opts.searchFn, allResults);
     }
   }
 
   if (allResults.length === 0 && warnings.length > 0) {
     return toolError(
-      `# Cross-package implements: "${keyword}"\n\nLookup failed.\n\n` +
+      `# Cross-package ${opts.modeLabel}: "${keyword}"\n\nLookup failed.\n\n` +
       warnings.map((w) => `- ${w}`).join("\n"),
     );
   }
 
   if (allResults.length === 0) {
     return toolSuccess(
-      `# Cross-package implements: "${keyword}"\n\n` +
-      `No types implementing '${keyword}' found across any package. Verify the exact type name.`,
+      `# Cross-package ${opts.modeLabel}: "${keyword}"\n\n${opts.noMatchMsg(keyword)}`,
     );
   }
 
-  return toolSuccess(formatCrossPackageImplements(keyword, allResults, totalMatches, capped, warnings));
+  return toolSuccess(formatCrossPackageIndexResults(keyword, allResults, totalMatches, capped, warnings, opts));
 }
 
-async function collectStaleImplementors(
+async function collectStaleResults(
   packages: PackageConfig[],
   keyword: string,
+  searchFn: (entries: IndexEntry[], keyword: string) => IndexEntry[],
   results: PackageMatches[],
 ): Promise<void> {
   for (const pkg of packages) {
     const stale = await readIndex(pkg);
     if (stale) {
       const entries = parseIndex(stale);
-      const pkgMatches = searchIndexForImplementors(entries, keyword);
+      const pkgMatches = searchFn(entries, keyword);
       if (pkgMatches.length > 0) {
         results.push({ packageName: pkg.name, matches: pkgMatches });
       }
@@ -544,29 +344,30 @@ async function collectStaleImplementors(
   }
 }
 
-function formatCrossPackageImplements(
+function formatCrossPackageIndexResults(
   keyword: string,
   results: PackageMatches[],
   totalMatches: number,
   capped: boolean,
   warnings: string[],
+  opts: CrossPackageIndexOpts,
 ): string {
   const lines: string[] = [];
-  lines.push(`# Cross-package implements: "${keyword}"`);
+  lines.push(`# Cross-package ${opts.modeLabel}: "${keyword}"`);
   lines.push("");
 
   const countLabel = capped
     ? `first ${MAX_CROSS_PACKAGE_MATCHES} of ${totalMatches}+`
     : String(totalMatches);
   lines.push(
-    `Found ${countLabel} implementor${totalMatches === 1 ? "" : "s"} across ${results.length} package${results.length === 1 ? "" : "s"}:`,
+    `Found ${countLabel} ${opts.countNoun}${totalMatches === 1 ? "" : "s"} across ${results.length} package${results.length === 1 ? "" : "s"}:`,
   );
 
   for (const { packageName, matches } of results) {
     lines.push("");
     lines.push(`## ${packageName}`);
     lines.push("");
-    for (const m of matches) lines.push(formatImplementsMatchLine(m));
+    for (const m of matches) lines.push(opts.formatLineFn(m));
   }
 
   lines.push("");
@@ -586,6 +387,63 @@ function formatCrossPackageImplements(
   }
 
   return lines.join("\n");
+}
+
+// ── Implements mode ──
+
+async function digLookupImplements(
+  config: DiggerConfig,
+  packageName: string | undefined,
+  keyword: string,
+): Promise<ToolResult> {
+  if (packageName === undefined) {
+    return crossPackageIndexSearch(config, keyword, IMPLEMENTS_SEARCH_OPTS);
+  }
+
+  debug("digLookup", "implements mode for", packageName, "keyword=", keyword);
+  const resolved = requirePackage(config, packageName);
+  if ("text" in resolved) return resolved;
+  const { pkg, repo } = resolved;
+
+  return withRepoLock(repo.name, async () => {
+    try {
+      const result = await ensureReady(repo, config);
+      const fresh = await isFresh(config.cacheDir, repo.name, result.currentHash);
+      if (!fresh) await invalidate(config.cacheDir, repo.name, repo.packages);
+
+      const entries = await ensurePackageIndex(result.sourcePath, pkg, fresh);
+      if (!fresh) await markFresh(config.cacheDir, repo.name, result.currentHash);
+
+      if (entries.length === 0) {
+        return toolSuccess(`# ${packageName} — implements: "${keyword}"\n\nNo .cs source files found.`);
+      }
+
+      const matches = searchIndexForImplementors(entries, keyword);
+      if (matches.length === 0) {
+        return toolSuccess(
+          `# ${packageName} — implements: "${keyword}"\n\n` +
+          `No types implementing '${keyword}' found. Try omitting packageName to search cross-package.`,
+        );
+      }
+
+      return toolSuccess(formatImplementsResults(packageName, keyword, matches));
+    } catch (err) {
+      const msg = extractErrorMessage(err);
+      error("digLookup", `implements '${packageName}':`, msg);
+      const stale = await readIndex(pkg);
+      if (stale) {
+        const entries = parseIndex(stale);
+        const matches = searchIndexForImplementors(entries, keyword);
+        if (matches.length > 0) {
+          return toolSuccess(
+            formatImplementsResults(packageName, keyword, matches) +
+            `\n\n---\n\n> **Warning:** Index may be stale. ${msg}`,
+          );
+        }
+      }
+      return toolError(`# ${packageName}\n\nSource unavailable. ${msg}`);
+    }
+  });
 }
 
 // ── References mode ──
@@ -608,10 +466,9 @@ async function digLookupReferences(
   }
 
   debug("digLookup", "references mode for", packageName, "keyword=", keyword);
-  const pkg = findPackage(config, packageName);
-  if (!pkg) return toolError(formatUnknownPackage(config, packageName));
-
-  const repo = config.repos.find((r) => r.name === pkg.repoName)!;
+  const resolved = requirePackage(config, packageName);
+  if ("text" in resolved) return resolved;
+  const { pkg, repo } = resolved;
 
   return withRepoLock(repo.name, async () => {
     try {
@@ -627,7 +484,7 @@ async function digLookupReferences(
 
       return toolSuccess(formatReferencesResults(packageName, keyword, refs));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = extractErrorMessage(err);
       error("digLookup", `references '${packageName}':`, msg);
       return toolError(`# ${packageName}\n\nSource unavailable. ${msg}`);
     }
@@ -671,8 +528,7 @@ async function digLookupReferencesAllPackages(
     const ready = readyResults.get(repo.name);
 
     if (!ready || ready.error) {
-      const errMsg = ready?.error ?? "repo resolution failed";
-      warnings.push(`${repo.name}: ${errMsg}`);
+      warnings.push(`${repo.name}: ${ready?.error ?? "repo resolution failed"}`);
       continue;
     }
 
@@ -698,7 +554,7 @@ async function digLookupReferencesAllPackages(
       }
       if (capped) break;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = extractErrorMessage(err);
       error("digLookup", `references repo '${repo.name}':`, msg);
       warnings.push(`${repo.name}: ${msg}`);
     }
