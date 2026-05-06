@@ -15,7 +15,7 @@ import { findPackage, formatUnknownPackage } from "../config.js";
 import { debug, error } from "../logger.js";
 import { withRepoLock } from "../repoLock.js";
 import { ensureReady } from "../repoManager.js";
-import { extractIndex, extractSignatures, serializeIndex, parseIndex, type IndexEntry } from "../sourceExtractor.js";
+import { extractIndex, extractSignatures, serializeIndex, parseIndex, formatEntryDisplay, type IndexEntry } from "../sourceExtractor.js";
 
 // ── Tool description (shown to Claude Code) ──
 
@@ -196,9 +196,11 @@ function formatSignatures(
 
   for (const sig of signatures) {
     const entry = matchedFiles.get(sig.filePath);
-    const heading = entry && entry.kind !== "method"
-      ? `${entry.symbol} (${entry.kind})`
-      : sig.filePath;
+    let heading = sig.filePath;
+    if (entry && entry.kind !== "method") {
+      const { displayName, kindLabel } = formatEntryDisplay(entry);
+      heading = `${displayName} (${kindLabel})`;
+    }
 
     lines.push("");
     lines.push(`## ${heading} — ${sig.filePath}`);

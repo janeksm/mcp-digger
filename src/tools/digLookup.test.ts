@@ -113,6 +113,28 @@ describe("digLookup", () => {
     expect(result.text).toContain("IService");
   });
 
+  it("shows generics and modifiers in symbol mode output", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/Entity.cs": [
+        "namespace MyLib;",
+        "public abstract class Entity<TId>",
+        "{",
+        "    public TId Id { get; set; }",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "MyLib", "Entity");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("**Entity<TId>** (abstract class)");
+  });
+
   it("returns cached index without regenerating", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
@@ -580,6 +602,28 @@ describe("implements mode", () => {
     expect(result.isError).toBe(false);
     expect(result.text).toContain("Child");
     expect(result.text).toContain(": Base");
+  });
+
+  it("shows generics and modifiers in implements mode output", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/IRepo.cs": CS_INTERFACE("Lib", "IRepo"),
+      "src/Lib/SqlRepo.cs": [
+        "namespace Lib;",
+        "public sealed class SqlRepo<T> : IRepo",
+        "{",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "IRepo", "implements");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("**SqlRepo<T>** (sealed class)");
   });
 });
 

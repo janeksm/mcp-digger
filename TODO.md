@@ -61,9 +61,9 @@
 
 > Postponed improvements to `dig_signatures` output quality and index coverage.
 
-| # | Task | Notes | Files |
-|---|------|-------|-------|
-| 1 | Enhanced type headings with generics + modifiers | `EntityBase (class)` → `EntityBase<TId> (abstract class)` — requires parsing generics from source | `src/tools/digSignatures.ts`, `src/sourceExtractor.ts` |
+| # | Task | Notes | Files | Status | Commit |
+|---|------|-------|-------|--------|--------|
+| 1 | Enhanced type headings with generics + modifiers | `EntityBase (class)` → `EntityBase<TId> (abstract class)` — requires parsing generics from source | `src/tools/digSignatures.ts`, `src/sourceExtractor.ts` | done | 3b599e1 |
 | 2 | Strip `public` keyword from signature output | Everything returned is public by definition — keyword is noise | `src/sourceExtractor.ts` |
 | 3 | Strip boilerplate methods (Equals, GetHashCode, ToString, operators) | Reduce noise in signature output | `src/sourceExtractor.ts` |
 | 4 | Strip XML doc comments from signature output | Optionally omit `///` comments to save tokens | `src/sourceExtractor.ts` |

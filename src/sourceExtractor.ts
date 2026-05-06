@@ -40,6 +40,8 @@ export interface IndexEntry {
   kind: "class" | "interface" | "struct" | "enum" | "record" | "method";
   parentType?: string;
   baseTypes?: string[];
+  generics?: string;
+  modifiers?: string;
   filePath: string;
 }
 
@@ -228,7 +230,7 @@ export async function extractPackageSummary(
 
 /**
  * Serialize index entries to flat pipe-delimited format.
- * Types: `symbol|kind|filePath` or `symbol|kind|filePath|Base1,Base2`
+ * Types: `symbol|kind|filePath[|bases[|generics[|modifiers]]]`
  * Methods: `symbol|method|parentType|filePath`
  */
 export function serializeIndex(entries: IndexEntry[]): string {
@@ -237,7 +239,11 @@ export function serializeIndex(entries: IndexEntry[]): string {
       if (e.kind === "method") {
         return `${e.symbol}|method|${e.parentType}|${e.filePath}`;
       }
-      const bases = e.baseTypes?.length ? `|${e.baseTypes.join(",")}` : "";
+      const basePart = e.baseTypes?.length ? e.baseTypes.join(",") : "";
+      if (e.generics || e.modifiers) {
+        return `${e.symbol}|${e.kind}|${e.filePath}|${basePart}|${e.generics ?? ""}|${e.modifiers ?? ""}`;
+      }
+      const bases = basePart ? `|${basePart}` : "";
       return `${e.symbol}|${e.kind}|${e.filePath}${bases}`;
     })
     .join("\n");
@@ -272,6 +278,12 @@ export function parseIndex(raw: string): IndexEntry[] {
       };
       if (parts.length >= 4 && parts[3]) {
         entry.baseTypes = parts[3].split(",");
+      }
+      if (parts.length >= 5 && parts[4]) {
+        entry.generics = parts[4];
+      }
+      if (parts.length >= 6 && parts[5]) {
+        entry.modifiers = parts[5];
       }
       return entry;
     });
@@ -471,9 +483,17 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
         }
       }
 
+      const afterName = trimmed.slice(typeMatch.index + typeMatch[0].length);
+      const generics = extractGenerics(afterName);
+
+      const beforeKeyword = trimmed.slice(0, typeMatch.index + typeMatch[0].indexOf(typeKind));
+      const modifiers = extractModifiers(beforeKeyword);
+
       const baseTypes = parseBaseTypes(fullDecl);
       const entry: IndexEntry = { symbol: name, kind: typeKind, filePath: relPath };
       if (baseTypes.length > 0) entry.baseTypes = baseTypes;
+      if (generics) entry.generics = generics;
+      if (modifiers) entry.modifiers = modifiers;
       entries.push(entry);
 
       if (opens > closes) {
@@ -574,6 +594,35 @@ function splitRespectingGenerics(text: string): string[] {
 function stripGenerics(name: string): string {
   const idx = name.indexOf("<");
   return idx >= 0 ? name.slice(0, idx).trim() : name;
+}
+
+function extractGenerics(text: string): string | undefined {
+  if (!text.startsWith("<")) return undefined;
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "<") depth++;
+    else if (text[i] === ">") {
+      depth--;
+      if (depth === 0) return text.slice(0, i + 1);
+    }
+  }
+  return undefined;
+}
+
+const TYPE_MODIFIERS = ["abstract", "sealed", "static"] as const;
+const TYPE_MODIFIER_RES = TYPE_MODIFIERS.map((mod) => new RegExp(`\\b${mod}\\b`));
+
+function extractModifiers(prefixText: string): string | undefined {
+  const found = TYPE_MODIFIERS.filter((_, i) =>
+    TYPE_MODIFIER_RES[i]!.test(prefixText),
+  );
+  return found.length > 0 ? found.join(" ") : undefined;
+}
+
+export function formatEntryDisplay(e: IndexEntry): { displayName: string; kindLabel: string } {
+  const displayName = e.generics ? `${e.symbol}${e.generics}` : e.symbol;
+  const kindLabel = e.modifiers ? `${e.modifiers} ${e.kind}` : e.kind;
+  return { displayName, kindLabel };
 }
 
 export function filterCsFiles(files: string[]): string[] {

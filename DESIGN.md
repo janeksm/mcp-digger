@@ -82,7 +82,7 @@
 
 **Purpose:** Searches type/method indexes for a keyword. Supports three search modes: `"symbol"` (default) matches type/method declarations by name substring; `"implements"` finds classes/structs that implement a given interface or extend a given base class; `"references"` finds files that reference a given type name in source code (word-boundary, case-sensitive). Provide `packageName` to search within a specific package, or omit it to search across all packages. For `implements` mode, omitting `packageName` is recommended since implementations typically live in a different package than the interface.
 
-**Output:** For `symbol` mode: markdown listing matching symbols (type name, kind, file path), grouped by `## PackageName` headings in cross-package mode, capped at 100 total matches. For `implements` mode: matching types with their base type list (e.g. `**SqlRepo** (class) : IRepo, IAuditable`), same grouping and cap. For `references` mode: file paths with occurrence counts (e.g. `` `Services/OrderService.cs` (3 occurrences) ``), capped at 50 files. Index cached per package as flat pipe-delimited file (`index.dat`) with optional base-type field, invalidated by commit hash. References mode reads source files directly (no cache).
+**Output:** For `symbol` mode: markdown listing matching symbols (type name with generics, kind with modifiers, file path — e.g. `**Entity<TId>** (abstract class)`), grouped by `## PackageName` headings in cross-package mode, capped at 100 total matches. For `implements` mode: matching types with their base type list (e.g. `**SqlRepo<T>** (sealed class) : IRepo, IAuditable`), same grouping and cap. For `references` mode: file paths with occurrence counts (e.g. `` `Services/OrderService.cs` (3 occurrences) ``), capped at 50 files. Index cached per package as flat pipe-delimited file (`index.dat`) with optional base-type, generics, and modifiers fields, invalidated by commit hash. References mode reads source files directly (no cache).
 
 ### `dig_signatures` — Level 2: Stripped Signatures
 
@@ -94,7 +94,7 @@
 
 **Purpose:** Returns stripped C# signatures filtered by keyword. Searches the package's type and method index, then returns stripped source for matching files — type declarations, method signatures, property definitions, and XML doc comments with method bodies replaced by placeholders. Call when you need exact method overloads, generic constraints, interface members, or return types for specific types.
 
-**Output:** Markdown with fenced C# code blocks per matching file. Headings show symbol name and kind for type matches (e.g. `EntityBase (class)`), or file path for method matches. Each file has a generated header with package name and commit hash. Uses the same index as `dig_lookup` for search and per-file signature cache under `signatures/` directory, both invalidated by commit hash.
+**Output:** Markdown with fenced C# code blocks per matching file. Headings show symbol name with generics and kind with modifiers for type matches (e.g. `EntityBase<TId> (abstract class)`), or file path for method matches. Each file has a generated header with package name and commit hash. Uses the same index as `dig_lookup` for search and per-file signature cache under `signatures/` directory, both invalidated by commit hash.
 
 ### `dig_file` — Level 3: Full Source
 

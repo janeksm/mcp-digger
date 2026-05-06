@@ -241,6 +241,28 @@ describe("digSignatures — keyword filtering", () => {
     expect(result.text).toContain("Found 1 match");
     expect(result.text).toContain("IService (interface)");
   });
+
+  it("shows generics and modifiers in type headings", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/Entity.cs": [
+        "namespace MyLib;",
+        "public abstract class Entity<TId>",
+        "{",
+        "    public TId Id { get; set; }",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digSignatures(config, "MyLib", "Entity");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("Entity<TId> (abstract class)");
+  });
 });
 
 // ── Caching ──

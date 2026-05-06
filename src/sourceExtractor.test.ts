@@ -11,6 +11,7 @@ import {
   stripCsBody,
   serializeIndex,
   parseIndex,
+  formatEntryDisplay,
   countReferences,
   searchReferences,
 } from "./sourceExtractor.js";
@@ -1048,6 +1049,84 @@ describe("extractIndex — baseTypes", () => {
   });
 });
 
+// ── extractIndex — generics and modifiers ──
+
+describe("extractIndex — generics and modifiers", () => {
+  it("captures generics on a class", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Repo.cs": "namespace Lib;\npublic class Repo<T>\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const repo = entries.find((e) => e.symbol === "Repo");
+    expect(repo?.generics).toBe("<T>");
+    expect(repo?.modifiers).toBeUndefined();
+  });
+
+  it("captures generics on an interface", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/IHandler.cs": "namespace Lib;\npublic interface IHandler<TRequest, TResponse>\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const handler = entries.find((e) => e.symbol === "IHandler");
+    expect(handler?.generics).toBe("<TRequest, TResponse>");
+  });
+
+  it("captures abstract modifier", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Entity.cs": "namespace Lib;\npublic abstract class Entity<TId>\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const entity = entries.find((e) => e.symbol === "Entity");
+    expect(entity?.generics).toBe("<TId>");
+    expect(entity?.modifiers).toBe("abstract");
+  });
+
+  it("captures sealed modifier", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Config.cs": "namespace Lib;\npublic sealed class Config\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const config = entries.find((e) => e.symbol === "Config");
+    expect(config?.generics).toBeUndefined();
+    expect(config?.modifiers).toBe("sealed");
+  });
+
+  it("captures static modifier", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Extensions.cs": "namespace Lib;\npublic static class Extensions\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const ext = entries.find((e) => e.symbol === "Extensions");
+    expect(ext?.modifiers).toBe("static");
+  });
+
+  it("captures nested generics", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Wrapper.cs": "namespace Lib;\npublic class Wrapper<Result<T>>\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const wrapper = entries.find((e) => e.symbol === "Wrapper");
+    expect(wrapper?.generics).toBe("<Result<T>>");
+  });
+
+  it("does not add modifiers when none present", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Plain.cs": "namespace Lib;\npublic class Plain\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const plain = entries.find((e) => e.symbol === "Plain");
+    expect(plain?.generics).toBeUndefined();
+    expect(plain?.modifiers).toBeUndefined();
+  });
+});
+
 // ── Serialization with baseTypes ──
 
 describe("serializeIndex / parseIndex — baseTypes", () => {
@@ -1082,6 +1161,95 @@ describe("serializeIndex / parseIndex — baseTypes", () => {
     expect(parsed[1]?.baseTypes).toBeUndefined();
     expect(parsed[2]?.kind).toBe("method");
     expect(parsed[2]?.parentType).toBe("Svc");
+  });
+});
+
+// ── Serialization with generics and modifiers ──
+
+describe("serializeIndex / parseIndex — generics and modifiers", () => {
+  it("round-trips entries with generics and modifiers", () => {
+    const entries = [
+      { symbol: "Entity", kind: "class" as const, filePath: "Entity.cs", baseTypes: ["IEntity"], generics: "<TId>", modifiers: "abstract" },
+    ];
+    const raw = serializeIndex(entries);
+    const parsed = parseIndex(raw);
+    expect(parsed[0]?.generics).toBe("<TId>");
+    expect(parsed[0]?.modifiers).toBe("abstract");
+    expect(parsed[0]?.baseTypes).toEqual(["IEntity"]);
+  });
+
+  it("round-trips entries with generics only", () => {
+    const entries = [
+      { symbol: "Repo", kind: "class" as const, filePath: "Repo.cs", generics: "<T>" },
+    ];
+    const raw = serializeIndex(entries);
+    const parsed = parseIndex(raw);
+    expect(parsed[0]?.generics).toBe("<T>");
+    expect(parsed[0]?.modifiers).toBeUndefined();
+    expect(parsed[0]?.baseTypes).toBeUndefined();
+  });
+
+  it("round-trips entries with modifiers only", () => {
+    const entries = [
+      { symbol: "Config", kind: "class" as const, filePath: "Config.cs", modifiers: "sealed" },
+    ];
+    const raw = serializeIndex(entries);
+    const parsed = parseIndex(raw);
+    expect(parsed[0]?.modifiers).toBe("sealed");
+    expect(parsed[0]?.generics).toBeUndefined();
+  });
+
+  it("old format (3-4 fields) parses without generics or modifiers", () => {
+    const raw = "Foo|class|Foo.cs\nBar|class|Bar.cs|IBar";
+    const parsed = parseIndex(raw);
+    expect(parsed[0]?.generics).toBeUndefined();
+    expect(parsed[0]?.modifiers).toBeUndefined();
+    expect(parsed[1]?.baseTypes).toEqual(["IBar"]);
+    expect(parsed[1]?.generics).toBeUndefined();
+    expect(parsed[1]?.modifiers).toBeUndefined();
+  });
+
+  it("handles mixed entries with and without generics/modifiers", () => {
+    const entries = [
+      { symbol: "Entity", kind: "class" as const, filePath: "Entity.cs", generics: "<TId>", modifiers: "abstract" },
+      { symbol: "Plain", kind: "class" as const, filePath: "Plain.cs" },
+      { symbol: "Run", kind: "method" as const, parentType: "Entity", filePath: "Entity.cs" },
+    ];
+    const raw = serializeIndex(entries);
+    const parsed = parseIndex(raw);
+    expect(parsed[0]?.generics).toBe("<TId>");
+    expect(parsed[0]?.modifiers).toBe("abstract");
+    expect(parsed[1]?.generics).toBeUndefined();
+    expect(parsed[1]?.modifiers).toBeUndefined();
+    expect(parsed[2]?.kind).toBe("method");
+  });
+});
+
+// ── formatEntryDisplay ──
+
+describe("formatEntryDisplay", () => {
+  it("formats type with generics and modifiers", () => {
+    const { displayName, kindLabel } = formatEntryDisplay({
+      symbol: "Entity", kind: "class", filePath: "Entity.cs", generics: "<TId>", modifiers: "abstract",
+    });
+    expect(displayName).toBe("Entity<TId>");
+    expect(kindLabel).toBe("abstract class");
+  });
+
+  it("formats type without generics or modifiers", () => {
+    const { displayName, kindLabel } = formatEntryDisplay({
+      symbol: "Config", kind: "class", filePath: "Config.cs",
+    });
+    expect(displayName).toBe("Config");
+    expect(kindLabel).toBe("class");
+  });
+
+  it("formats interface with generics", () => {
+    const { displayName, kindLabel } = formatEntryDisplay({
+      symbol: "IHandler", kind: "interface", filePath: "IHandler.cs", generics: "<TReq, TRes>",
+    });
+    expect(displayName).toBe("IHandler<TReq, TRes>");
+    expect(kindLabel).toBe("interface");
   });
 });
 

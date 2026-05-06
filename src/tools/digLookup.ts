@@ -18,6 +18,7 @@ import {
   serializeIndex,
   parseIndex,
   searchReferences,
+  formatEntryDisplay,
   type IndexEntry,
   type FileReference,
 } from "../sourceExtractor.js";
@@ -193,7 +194,8 @@ function formatMatchLine(m: IndexEntry): string {
   if (m.kind === "method") {
     return `- **${m.symbol}** (method on ${m.parentType}) — \`${m.filePath}\``;
   }
-  return `- **${m.symbol}** (${m.kind}) — \`${m.filePath}\``;
+  const { displayName, kindLabel } = formatEntryDisplay(m);
+  return `- **${displayName}** (${kindLabel}) — \`${m.filePath}\``;
 }
 
 async function digLookupAllPackages(
@@ -360,9 +362,10 @@ function searchIndexForImplementors(entries: IndexEntry[], keyword: string): Ind
 }
 
 function formatImplementsMatchLine(m: IndexEntry): string {
+  const { displayName, kindLabel } = formatEntryDisplay(m);
   const bases = m.baseTypes?.join(", ") ?? "";
   const baseSuffix = bases ? ` : ${bases}` : "";
-  return `- **${m.symbol}** (${m.kind})${baseSuffix} — \`${m.filePath}\``;
+  return `- **${displayName}** (${kindLabel})${baseSuffix} — \`${m.filePath}\``;
 }
 
 async function digLookupImplements(
