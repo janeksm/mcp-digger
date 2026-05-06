@@ -9,6 +9,7 @@ import {
   extractPackageSummary,
   extractSignatures,
   stripCsBody,
+  cleanSignatureOutput,
   serializeIndex,
   parseIndex,
   formatEntryDisplay,
@@ -404,6 +405,209 @@ describe("stripCsBody", () => {
   });
 });
 
+// ── cleanSignatureOutput ──
+
+describe("cleanSignatureOutput", () => {
+  it("strips XML doc comments", () => {
+    const input = [
+      "class Foo",
+      "{",
+      "    /// <summary>Does work.</summary>",
+      "    void Run() { /* ... */ }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).not.toContain("///");
+    expect(result).toContain("void Run() { /* ... */ }");
+  });
+
+  it("strips private fields", () => {
+    const input = [
+      "class Foo",
+      "{",
+      "    private readonly IRepo _repo;",
+      "    string Name { get; set; }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).not.toContain("private readonly IRepo _repo;");
+    expect(result).toContain("string Name { get; set; }");
+  });
+
+  it("strips single-line private methods", () => {
+    const input = [
+      "class Foo",
+      "{",
+      "    private void Internal() { /* ... */ }",
+      "    void Public() { /* ... */ }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).not.toContain("private void Internal()");
+    expect(result).toContain("void Public() { /* ... */ }");
+  });
+
+  it("strips multi-line private methods", () => {
+    const input = [
+      "class Foo",
+      "{",
+      "    private async Task<Result> ProcessAsync(",
+      "        int id,",
+      "        CancellationToken ct)",
+      "    { /* ... */ }",
+      "    void Public() { /* ... */ }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).not.toContain("private async Task<Result>");
+    expect(result).not.toContain("int id,");
+    expect(result).toContain("void Public() { /* ... */ }");
+  });
+
+  it("preserves private in auto-properties", () => {
+    const input = [
+      "class Foo",
+      "{",
+      "    string Name { get; private set; }",
+      "    int Age { get; init; }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).toContain("string Name { get; private set; }");
+    expect(result).toContain("int Age { get; init; }");
+  });
+
+  it("strips private auto-properties as single line", () => {
+    const input = [
+      "class Foo",
+      "{",
+      "    private string Secret { get; set; }",
+      "    string Name { get; set; }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).not.toContain("Secret");
+    expect(result).toContain("string Name { get; set; }");
+  });
+
+  it("strips boilerplate Equals", () => {
+    const input = [
+      "class Foo",
+      "{",
+      "    override bool Equals(object? obj) { /* ... */ }",
+      "    void Run() { /* ... */ }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).not.toContain("Equals");
+    expect(result).toContain("void Run()");
+  });
+
+  it("strips boilerplate GetHashCode", () => {
+    const input = [
+      "class Foo",
+      "{",
+      "    override int GetHashCode() { /* ... */ }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).not.toContain("GetHashCode");
+  });
+
+  it("strips boilerplate ToString", () => {
+    const input = [
+      "class Foo",
+      "{",
+      "    override string ToString() { /* ... */ }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).not.toContain("ToString");
+  });
+
+  it("strips operator overloads", () => {
+    const input = [
+      "class Foo",
+      "{",
+      "    static Foo operator +(Foo a, Foo b) { /* ... */ }",
+      "    void Run() { /* ... */ }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).not.toContain("operator");
+    expect(result).toContain("void Run()");
+  });
+
+  it("strips public keyword from declarations", () => {
+    const input = [
+      "public class Foo",
+      "{",
+      "    public void Run() { /* ... */ }",
+      "    public string Name { get; set; }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).toContain("class Foo");
+    expect(result).toContain("void Run() { /* ... */ }");
+    expect(result).toContain("string Name { get; set; }");
+    expect(result).not.toMatch(/\bpublic\b/);
+  });
+
+  it("preserves internal and protected keywords", () => {
+    const input = [
+      "internal class Bar",
+      "{",
+      "    protected void Do() { /* ... */ }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).toContain("internal class Bar");
+    expect(result).toContain("protected void Do()");
+  });
+
+  it("collapses consecutive blank lines", () => {
+    const input = [
+      "class Foo",
+      "{",
+      "",
+      "",
+      "",
+      "    void Run() { /* ... */ }",
+      "}",
+    ].join("\n");
+
+    const result = cleanSignatureOutput(input);
+
+    expect(result).not.toContain("\n\n\n");
+    expect(result).toContain("class Foo");
+    expect(result).toContain("void Run()");
+  });
+});
+
 // ── extractOverview ──
 
 describe("extractOverview", () => {
@@ -556,8 +760,9 @@ describe("extractSignatures", () => {
     expect(sigs[0]!.content).toContain(
       "// GENERATED — read only — MyLib @ commit abc123de",
     );
-    expect(sigs[0]!.content).toContain("public class Service");
-    expect(sigs[0]!.content).toContain("public void Run()");
+    expect(sigs[0]!.content).toContain("class Service");
+    expect(sigs[0]!.content).not.toContain("public class");
+    expect(sigs[0]!.content).toContain("void Run()");
     expect(sigs[0]!.content).toContain("{ /* ... */ }");
     expect(sigs[0]!.content).not.toContain("Console.WriteLine");
   });
@@ -623,8 +828,9 @@ describe("extractSignatures", () => {
     const sigs = await extractSignatures(repoDir, pkg, "abc123");
 
     const content = sigs[0]!.content;
-    expect(content).toContain("/// <summary>Repository pattern.</summary>");
-    expect(content).toContain("public interface IRepo<T>");
+    expect(content).not.toContain("///");
+    expect(content).toContain("interface IRepo<T>");
+    expect(content).not.toContain("public interface");
     expect(content).toContain("T GetById(int id);");
     expect(content).toContain("void Save(T entity);");
   });

@@ -30,6 +30,7 @@ const NOT_METHOD = new Set([
   "namespace", "if", "else", "while", "for", "foreach",
   "switch", "catch", "using", "delegate", "event", "new",
   "return", "throw", "typeof", "sizeof", "nameof", "where",
+  "lock", "default", "checked", "unchecked", "fixed", "when",
 ]);
 const VALID_KINDS = new Set(["class", "interface", "struct", "enum", "record", "method"]);
 
@@ -155,7 +156,7 @@ export async function extractSignatures(
 
     const filePath = csFiles[i]!;
     const relPath = filePath.slice(pkg.pathInRepo.length + 1);
-    const stripped = stripCsBody(source);
+    const stripped = cleanSignatureOutput(stripCsBody(source));
 
     results.push({ filePath: relPath, content: header + stripped });
   }
@@ -287,6 +288,58 @@ export function parseIndex(raw: string): IndexEntry[] {
       }
       return entry;
     });
+}
+
+// ── Signature cleanup ──
+
+const PRIVATE_START_RE = /^\s*private\s/;
+const BOILERPLATE_RE = /\boverride\b[^;{]*\b(?:Equals|GetHashCode|ToString)\b/;
+const OPERATOR_RE = /\bstatic\b[^;{]*\boperator\b/;
+const PUBLIC_START_RE = /^(\s*)public\s+/;
+
+function endsDeclaration(trimmed: string): boolean {
+  return trimmed.endsWith(";") || trimmed.endsWith("}");
+}
+
+export function cleanSignatureOutput(stripped: string): string {
+  const lines = stripped.split("\n");
+  const result: string[] = [];
+  let skipping = false;
+  let lastWasBlank = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (skipping) {
+      if (endsDeclaration(trimmed)) skipping = false;
+      continue;
+    }
+
+    if (trimmed.startsWith("///")) continue;
+
+    if (PRIVATE_START_RE.test(line)) {
+      if (!endsDeclaration(trimmed)) skipping = true;
+      continue;
+    }
+
+    if (BOILERPLATE_RE.test(trimmed) || OPERATOR_RE.test(trimmed)) {
+      if (!endsDeclaration(trimmed)) skipping = true;
+      continue;
+    }
+
+    const cleaned = line.replace(PUBLIC_START_RE, "$1");
+
+    if (cleaned.trim() === "") {
+      if (lastWasBlank) continue;
+      lastWasBlank = true;
+    } else {
+      lastWasBlank = false;
+    }
+
+    result.push(cleaned);
+  }
+
+  return result.join("\n");
 }
 
 // ── Body stripping ──
