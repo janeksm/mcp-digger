@@ -10,6 +10,7 @@ import {
   isValidPackageName,
   loadConfig,
   parseEnvFile,
+  validateBranchName,
   validateRepoUrl,
   type ConfigFile,
   type RepoConfig,
@@ -1014,5 +1015,81 @@ describe("loadConfig — packageFilter", () => {
     expect(() => loadConfig(env, cwd)).toThrow(
       /'packageFilter' and 'packages' are mutually exclusive/i,
     );
+  });
+});
+
+// ── validateBranchName ──
+
+describe("validateBranchName", () => {
+  it.each([
+    "main",
+    "develop",
+    "feature/my-branch",
+    "release/1.0",
+    "hotfix-123",
+    "v1.0.0",
+    "my_branch",
+    "feature/nested/deep",
+  ])("accepts valid branch name: %s", (name) => {
+    expect(validateBranchName(name)).toBeUndefined();
+  });
+
+  it.each([
+    ["..evil", "must not contain '..'"],
+    ["foo/../bar", "must not contain '..'"],
+    ["/leading", "must not start or end with '/'"],
+    ["trailing/", "must not start or end with '/'"],
+    ["foo//bar", "must not contain '//'"],
+    ["-dash-start", "must not start with '-'"],
+    ["back\\slash", "must not contain backslashes"],
+    ["  ", "must not be empty"],
+    ["has space", "invalid characters"],
+  ])("rejects invalid branch name: %s (%s)", (name, expectedMsg) => {
+    const result = validateBranchName(name);
+    expect(result).toBeDefined();
+    expect(result).toMatch(new RegExp(expectedMsg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+  });
+});
+
+// ── loadConfig — branch ──
+
+describe("loadConfig — branch", () => {
+  it("passes branch through to RepoConfig", () => {
+    const { env, cwd } = setupConfig(minimalConfig({ branch: "develop" }));
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.repos[0]!.branch).toBe("develop");
+  });
+
+  it("branch is undefined when omitted", () => {
+    const { env, cwd } = setupConfig(minimalConfig());
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.repos[0]!.branch).toBeUndefined();
+  });
+
+  it("accepts branch with slashes", () => {
+    const { env, cwd } = setupConfig(minimalConfig({ branch: "feature/my-work" }));
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.repos[0]!.branch).toBe("feature/my-work");
+  });
+
+  it("rejects invalid branch name", () => {
+    const { env, cwd } = setupConfig(minimalConfig({ branch: "../traversal" }));
+    expect(() => loadConfig(env, cwd)).toThrow(/branch name must not contain/);
+  });
+
+  it("warns when branch is set on local-only repo", () => {
+    const config: ConfigFile = {
+      localRepos: { bsf: "C:/dev/bsf" },
+      repos: [{ name: "bsf", branch: "develop", packages: ["MyCompany.Core"] }],
+    };
+    const { env, cwd } = setupConfig(config);
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.warnings.some((w) => w.includes("branch") && w.includes("local-only"))).toBe(true);
+  });
+
+  it("does not warn when branch is set on repo with URL", () => {
+    const { env, cwd } = setupConfig(minimalConfig({ branch: "develop" }));
+    const cfg = loadConfig(env, cwd);
+    expect(cfg.warnings.some((w) => w.includes("branch"))).toBe(false);
   });
 });

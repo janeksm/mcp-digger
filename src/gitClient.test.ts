@@ -16,7 +16,7 @@ import {
   readFile,
   revParse,
 } from "./gitClient.js";
-import { createBareRepo, initRepo } from "./testHelpers.js";
+import { createBareRepo, createBareRepoWithBranch, initRepo } from "./testHelpers.js";
 
 const execFile = util.promisify(child_process.execFile);
 
@@ -37,6 +37,11 @@ const autoAuth: GitAuth = { strategy: "auto" };
 
 const createRepo = (files: Record<string, string>) => initRepo(tmpDir, files);
 const createBare = (files: Record<string, string>) => createBareRepo(tmpDir, files);
+const createBareWithBranch = (
+  defaultFiles: Record<string, string>,
+  branchName: string,
+  branchFiles: Record<string, string>,
+) => createBareRepoWithBranch(tmpDir, defaultFiles, branchName, branchFiles);
 
 // ── injectPat ──
 
@@ -404,5 +409,76 @@ describe("lsRemote", () => {
     expect(result.error).not.toContain(PAT);
     expect(result.attempts).toContain("unauthenticated");
     expect(result.attempts).toContain("pat");
+  });
+});
+
+// ── clone with branch ──
+
+describe("clone — branch", () => {
+  it("clones a specific branch", async () => {
+    const bareDir = await createBareWithBranch(
+      { "default.txt": "on-default" },
+      "develop",
+      { "develop.txt": "on-develop" },
+    );
+    const cloneDir = path.join(tmpDir, "branch-clone");
+
+    await clone(bareDir, cloneDir, noAuth, 1, "develop");
+
+    expect(fs.existsSync(path.join(cloneDir, "develop.txt"))).toBe(true);
+    const { stdout } = await execFile("git", ["-C", cloneDir, "rev-parse", "--abbrev-ref", "HEAD"]);
+    expect(stdout.trim()).toBe("develop");
+  });
+
+  it("clones default branch when branch is undefined", async () => {
+    const bareDir = await createBareWithBranch(
+      { "default.txt": "on-default" },
+      "develop",
+      { "develop.txt": "on-develop" },
+    );
+    const cloneDir = path.join(tmpDir, "default-clone");
+
+    await clone(bareDir, cloneDir, noAuth);
+
+    expect(fs.existsSync(path.join(cloneDir, "default.txt"))).toBe(true);
+    expect(fs.existsSync(path.join(cloneDir, "develop.txt"))).toBe(false);
+  });
+
+  it("throws GitError for nonexistent branch", async () => {
+    const bareDir = await createBare({ "file.txt": "content" });
+    const cloneDir = path.join(tmpDir, "bad-branch");
+
+    await expect(clone(bareDir, cloneDir, noAuth, 1, "nonexistent-branch")).rejects.toThrow(GitError);
+  });
+});
+
+// ── fetch with branch ──
+
+describe("fetch — branch", () => {
+  it("fetches a specific branch", async () => {
+    const bareDir = await createBareWithBranch(
+      { "default.txt": "on-default" },
+      "develop",
+      { "develop.txt": "on-develop" },
+    );
+    const cloneDir = path.join(tmpDir, "fetch-branch");
+    await clone(bareDir, cloneDir, noAuth, 1, "develop");
+
+    const hashBefore = await revParse(cloneDir, "HEAD");
+
+    // Push a new commit to the develop branch via a temp working copy
+    const pushDir = path.join(tmpDir, "pusher");
+    await execFile("git", ["clone", "-b", "develop", bareDir, pushDir]);
+    await execFile("git", ["-C", pushDir, "config", "user.email", "test@test.com"]);
+    await execFile("git", ["-C", pushDir, "config", "user.name", "Test"]);
+    fs.writeFileSync(path.join(pushDir, "new-file.txt"), "new content");
+    await execFile("git", ["-C", pushDir, "add", "."]);
+    await execFile("git", ["-C", pushDir, "commit", "-m", "update develop"]);
+    await execFile("git", ["-C", pushDir, "push"]);
+
+    await fetch(cloneDir, noAuth, undefined, "develop");
+
+    const fetchHead = await revParse(cloneDir, "FETCH_HEAD");
+    expect(fetchHead).not.toBe(hashBefore);
   });
 });

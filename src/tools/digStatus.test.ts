@@ -277,4 +277,31 @@ describe("repo info display", () => {
 
     expect(result).toContain("auto (not yet discovered)");
   });
+
+  it("shows branch when configured", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "content" });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    repo.branch = "develop";
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("Branch:** develop");
+  });
+
+  it("omits branch line when not configured", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "content" });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).not.toContain("Branch:**");
+  });
 });

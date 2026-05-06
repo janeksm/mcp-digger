@@ -9,6 +9,7 @@ import { ensureAllReady, ensureReady } from "./repoManager.js";
 import { scanCachePath } from "./solutionScanner.js";
 import {
   createBareRepo as createBareRepoHelper,
+  createBareRepoWithBranch as createBareRepoWithBranchHelper,
   initRepo as initRepoHelper,
   makeConfig as makeConfigHelper,
   makeRepoConfig as makeRepoConfigHelper,
@@ -35,6 +36,11 @@ afterEach(() => {
 
 const initRepo = (files: Record<string, string>) => initRepoHelper(tmpDir, files);
 const createBareRepo = (files: Record<string, string>) => createBareRepoHelper(tmpDir, files);
+const createBareRepoWithBranch = (
+  defaultFiles: Record<string, string>,
+  branchName: string,
+  branchFiles: Record<string, string>,
+) => createBareRepoWithBranchHelper(tmpDir, defaultFiles, branchName, branchFiles);
 const makeConfig = (repos: RepoConfig[]) => makeConfigHelper(repos, tmpDir);
 const makeRepoConfig = (overrides: Partial<RepoConfig> & { name: string }) =>
   makeRepoConfigHelper(overrides, tmpDir);
@@ -386,5 +392,53 @@ describe("ensureReady — wildcard mode", () => {
 
     const cachePath = scanCachePath(config.cacheDir);
     expect(fs.existsSync(cachePath)).toBe(true);
+  });
+});
+
+// ── Branch support ──
+
+describe("ensureReady — branch", () => {
+  it("clones a specific branch for managed repos", async () => {
+    const bareDir = await createBareRepoWithBranch(
+      { "default.txt": "on-default" },
+      "develop",
+      { "develop.txt": "on-develop" },
+    );
+    const repo = makeRepoConfig({ name: "mylib", url: bareDir, branch: "develop" });
+    const config = makeConfig([repo]);
+
+    const result = await ensureReady(repo, config);
+
+    expect(result.mode).toBe("managed");
+    expect(result.currentHash).toMatch(/^[0-9a-f]{40}$/);
+    expect(fs.existsSync(path.join(result.sourcePath, "develop.txt"))).toBe(true);
+    expect(fs.existsSync(path.join(result.sourcePath, "default.txt"))).toBe(true);
+  });
+
+  it("fetches updates on the specified branch", async () => {
+    const bareDir = await createBareRepoWithBranch(
+      { "default.txt": "on-default" },
+      "develop",
+      { "develop.txt": "v1" },
+    );
+    const repo = makeRepoConfig({ name: "mylib", url: bareDir, branch: "develop" });
+    const config = makeConfig([repo]);
+
+    const first = await ensureReady(repo, config);
+
+    // Push a new commit to develop
+    const pushDir = path.join(tmpDir, "pusher");
+    await execFile("git", ["clone", "-b", "develop", bareDir, pushDir]);
+    await execFile("git", ["-C", pushDir, "config", "user.email", "test@test.com"]);
+    await execFile("git", ["-C", pushDir, "config", "user.name", "Test"]);
+    fs.writeFileSync(path.join(pushDir, "new.txt"), "new content");
+    await execFile("git", ["-C", pushDir, "add", "."]);
+    await execFile("git", ["-C", pushDir, "commit", "-m", "update develop"]);
+    await execFile("git", ["-C", pushDir, "push"]);
+
+    const second = await ensureReady(repo, config);
+
+    expect(second.mode).toBe("managed");
+    expect(second.currentHash).not.toBe(first.currentHash);
   });
 });

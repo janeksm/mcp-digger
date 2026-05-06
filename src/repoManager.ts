@@ -165,10 +165,10 @@ async function ensureManaged(
     debug("repoManager", repoConfig.name, "cloning to", targetDir);
     // Remove any partial clone remnant (force: true is a no-op if path doesn't exist)
     await fs.promises.rm(targetDir, { recursive: true, force: true });
-    await gitClient.clone(repoConfig.url, targetDir, repoConfig.auth);
+    await gitClient.clone(repoConfig.url, targetDir, repoConfig.auth, 1, repoConfig.branch);
   } else {
     debug("repoManager", repoConfig.name, "fetching updates");
-    await gitClient.fetch(targetDir, repoConfig.auth, repoConfig.url);
+    await gitClient.fetch(targetDir, repoConfig.auth, repoConfig.url, repoConfig.branch);
   }
 
   // For fresh clones HEAD is already the latest; for fetched repos use FETCH_HEAD

@@ -133,6 +133,9 @@ export async function digStatus(config: DiggerConfig): Promise<string> {
     if (repo.url) {
       sections.push(`- **URL:** configured`);
     }
+    if (repo.branch) {
+      sections.push(`- **Branch:** ${repo.branch}`);
+    }
     sections.push(`- **Source root:** ${repo.sourceRoot}`);
 
     // Auth info (per-repo)

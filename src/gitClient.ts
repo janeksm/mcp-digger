@@ -131,11 +131,16 @@ export async function clone(
   targetDir: string,
   auth: GitAuth,
   depth: number = 1,
+  branch?: string,
 ): Promise<void> {
   const isHttps = url.startsWith("https://") || url.startsWith("https:");
   debug("gitClient", "clone ->", targetDir,
-    `strategy=${auth.strategy} pat=${auth.pat ? "yes" : "no"} https=${isHttps}`);
+    `strategy=${auth.strategy} pat=${auth.pat ? "yes" : "no"} https=${isHttps}` +
+    (branch ? ` branch=${branch}` : ""));
   const args = ["clone", "--depth", String(depth), "--single-branch"];
+  if (branch) {
+    args.push("-b", branch);
+  }
 
   if (auth.strategy === "pat") {
     const authUrl = auth.pat ? injectPat(url, auth.pat) : undefined;
@@ -176,18 +181,23 @@ export async function fetch(
   repoDir: string,
   auth: GitAuth,
   remoteUrl?: string,
+  branch?: string,
 ): Promise<void> {
   const isHttps = remoteUrl ? (remoteUrl.startsWith("https://") || remoteUrl.startsWith("https:")) : false;
   debug("gitClient", "fetch", repoDir,
-    `strategy=${auth.strategy} pat=${auth.pat ? "yes" : "no"} https=${isHttps}`);
+    `strategy=${auth.strategy} pat=${auth.pat ? "yes" : "no"} https=${isHttps}` +
+    (branch ? ` branch=${branch}` : ""));
+  const refspec = branch ?? "HEAD";
   const baseArgs = ["-C", repoDir, "fetch", "--depth", "1", "origin"];
+  if (branch) {
+    baseArgs.push(branch);
+  }
 
   if (auth.strategy === "pat" && auth.pat && remoteUrl) {
     const authUrl = injectPat(remoteUrl, auth.pat);
     if (authUrl) {
-      // Fetch using explicit auth URL instead of the configured remote
       await gitRedacted(
-        ["-C", repoDir, "fetch", "--depth", "1", authUrl, "HEAD"],
+        ["-C", repoDir, "fetch", "--depth", "1", authUrl, refspec],
         auth.pat,
       );
       debug("gitClient", "fetch: success (authenticated via PAT)");
@@ -213,7 +223,7 @@ export async function fetch(
     }
     debug("gitClient", `fetch: unauthenticated failed: ${errMsg}, retrying with PAT`);
     await gitRedacted(
-      ["-C", repoDir, "fetch", "--depth", "1", retry.authUrl, "HEAD"],
+      ["-C", repoDir, "fetch", "--depth", "1", retry.authUrl, refspec],
       retry.pat,
     );
     debug("gitClient", "fetch: success (authenticated via PAT after retry)");

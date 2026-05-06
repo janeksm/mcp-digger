@@ -20,6 +20,7 @@ export interface AuthFile {
 export interface RepoDefinition {
   name: string;
   url?: string;
+  branch?: string; // git branch to clone/track (default: repo default branch)
   sourceRoot?: string; // default "src"
   packages?: string[]; // if omitted → auto-discover at runtime
   packageFilter?: string; // e.g. "BSF.*" — mutually exclusive with packages
@@ -38,6 +39,8 @@ export interface ConfigFile {
 export interface RepoConfig {
   name: string;
   url?: string;
+  /** Git branch to clone/track for managed repos. Undefined = repo default branch. */
+  branch?: string;
   /** Absolute path to developer's local clone (Mode B), from `localRepos`. */
   localPath?: string;
   /** Absolute target dir for managed clones: `<managedSourceDir>/<slug>`. */
@@ -132,6 +135,19 @@ export function isValidPackageName(name: string): boolean {
 
 export function filterPrefix(packageFilter: string): string {
   return packageFilter.slice(0, -1);
+}
+
+const BRANCH_NAME_RE = /^[A-Za-z0-9._/-]+$/;
+
+export function validateBranchName(branch: string): string | undefined {
+  if (!branch.trim()) return "branch name must not be empty.";
+  if (branch.startsWith("-")) return "branch name must not start with '-'.";
+  if (branch.startsWith("/") || branch.endsWith("/")) return "branch name must not start or end with '/'.";
+  if (branch.includes("..")) return "branch name must not contain '..'.";
+  if (branch.includes("//")) return "branch name must not contain '//'.";
+  if (branch.includes("\\")) return "branch name must not contain backslashes.";
+  if (!BRANCH_NAME_RE.test(branch)) return "branch name contains invalid characters. Allowed: letters, digits, '.', '_', '/', '-'.";
+  return undefined;
 }
 
 const SSH_SHORTHAND_RE = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:.+$/;
@@ -466,6 +482,14 @@ export function loadConfig(
       }
     }
 
+    const branch = repoDef.branch?.trim() || undefined;
+    if (branch) {
+      const branchError = validateBranchName(branch);
+      if (branchError) {
+        errors.push(`Repo '${name}': ${branchError}`);
+      }
+    }
+
     const url = repoDef.url?.trim() || undefined;
     if (url) {
       const urlError = validateRepoUrl(url);
@@ -478,6 +502,12 @@ export function loadConfig(
 
     if (!url && !localPath) {
       noSource.push(name);
+    }
+
+    if (branch && localPath && !url) {
+      warnings.push(
+        `Repo '${name}': 'branch' is set but repo has no URL (local-only). The branch setting only affects managed clones.`,
+      );
     }
 
     // Mark this repo name as consumed so we can detect orphan localRepos later
@@ -522,6 +552,7 @@ export function loadConfig(
     repos.push({
       name,
       url,
+      branch,
       localPath,
       managedSourcePath: path.join(managedSourceDir, name),
       sourceRoot,

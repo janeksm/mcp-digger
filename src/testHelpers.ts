@@ -120,6 +120,28 @@ export async function createBareRepo(
   return bareDir;
 }
 
+/** Create a bare repo with both default branch and a named branch with different content. */
+export async function createBareRepoWithBranch(
+  tmpDir: string,
+  defaultFiles: Record<string, string>,
+  branchName: string,
+  branchFiles: Record<string, string>,
+): Promise<string> {
+  const workDir = await initRepo(tmpDir, defaultFiles);
+  await execFile("git", ["-C", workDir, "checkout", "-b", branchName]);
+  for (const [filePath, content] of Object.entries(branchFiles)) {
+    const fullPath = path.join(workDir, filePath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content);
+  }
+  await execFile("git", ["-C", workDir, "add", "."]);
+  await execFile("git", ["-C", workDir, "commit", "-m", `commit on ${branchName}`]);
+  await execFile("git", ["-C", workDir, "checkout", "-"]);
+  const bareDir = path.join(tmpDir, "bare-" + Math.random().toString(36).slice(2) + ".git");
+  await execFile("git", ["clone", "--bare", workDir, bareDir]);
+  return bareDir;
+}
+
 // ── Solution-scanner test fixtures ──
 
 /**
