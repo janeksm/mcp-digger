@@ -11,6 +11,11 @@ import {
   type ScanResult,
 } from "./solutionScanner.js";
 
+// ── Constants ──
+
+const PROJECT_REFERENCE_RE =
+  /<ProjectReference\s+[^>]*Include\s*=\s*"([^"]+)"/gi;
+
 // ── Result type ──
 
 export interface RepoReadyResult {
@@ -107,6 +112,10 @@ export async function ensureReady(
     );
     const scan = scanResult ?? (await scanAndCache(config));
     applyWildcardMatch(repoConfig, result, scan, config, candidates);
+
+    if (repoConfig.packages.length > 0) {
+      await expandProjectReferences(result.sourcePath, repoConfig, candidates);
+    }
   }
 
   return result;
@@ -239,5 +248,71 @@ function buildWildcardEmptyError(
     `Fix: either add an explicit 'packages' list to this repo in ${config.configPath}, ` +
     `or verify the solution / props files at ${scan.workspaceRoot} reference the expected packages.\n` +
     `Scan details cached at ${cachePath}.`
+  );
+}
+
+// ── Transitive ProjectReference expansion ──
+
+export function extractProjectReferenceNames(csprojContent: string): string[] {
+  PROJECT_REFERENCE_RE.lastIndex = 0;
+  const names: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = PROJECT_REFERENCE_RE.exec(csprojContent)) !== null) {
+    if (!m[1]) continue;
+    const normalised = m[1].replace(/\\/g, "/");
+    const basename = normalised.split("/").pop();
+    if (!basename) continue;
+    const name = basename.endsWith(".csproj")
+      ? basename.slice(0, -".csproj".length)
+      : basename;
+    names.push(name);
+  }
+  return names;
+}
+
+async function expandProjectReferences(
+  sourcePath: string,
+  repoConfig: RepoConfig,
+  candidates: PackageConfig[],
+): Promise<void> {
+  const prefix = filterPrefix(repoConfig.packageFilter!);
+  const candidateMap = new Map(candidates.map((c) => [c.name, c]));
+  const matched = new Set(repoConfig.packages.map((p) => p.name));
+  const queue = [...matched];
+  const visited = new Set<string>();
+
+  for (let qi = 0; qi < queue.length; qi++) {
+    const current = queue[qi]!;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    const pkg = candidateMap.get(current);
+    if (!pkg) continue;
+    const csprojPath = `${pkg.pathInRepo}/${current}.csproj`;
+
+    let content: string;
+    try {
+      content = await gitClient.readFile(sourcePath, csprojPath);
+    } catch {
+      debug("repoManager", repoConfig.name, `transitive: skipping unreadable ${csprojPath}`);
+      continue;
+    }
+
+    for (const refName of extractProjectReferenceNames(content)) {
+      if (matched.has(refName)) continue;
+      if (!refName.startsWith(prefix)) continue;
+      const candidate = candidateMap.get(refName);
+      if (!candidate) continue;
+
+      matched.add(refName);
+      queue.push(refName);
+      repoConfig.packages.push(candidate);
+    }
+  }
+
+  debug(
+    "repoManager",
+    repoConfig.name,
+    `transitive: visited=${visited.size} total=${repoConfig.packages.length}`,
   );
 }

@@ -5,7 +5,7 @@ import * as path from "node:path";
 import * as util from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RepoConfig } from "./config.js";
-import { ensureAllReady, ensureReady } from "./repoManager.js";
+import { ensureAllReady, ensureReady, extractProjectReferenceNames } from "./repoManager.js";
 import { scanCachePath } from "./solutionScanner.js";
 import {
   createBareRepo as createBareRepoHelper,
@@ -392,6 +392,191 @@ describe("ensureReady — wildcard mode", () => {
 
     const cachePath = scanCachePath(config.cacheDir);
     expect(fs.existsSync(cachePath)).toBe(true);
+  });
+});
+
+// ── Wildcard transitive ProjectReference expansion ──
+
+describe("ensureReady — wildcard transitive ProjectReference", () => {
+  it("includes single-hop transitive dependency via ProjectReference", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": "<Project />",
+      "src/MyCompany.Data/MyCompany.Data.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\MyCompany.Core\\MyCompany.Core.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/MyCompany.Api/MyCompany.Api.csproj": "<Project />",
+    });
+    // Workspace only directly references Data and Api — Core is transitive
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), [
+      "MyCompany.Data",
+      "MyCompany.Api",
+    ]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    const names = repo.packages.map((p) => p.name).sort();
+    expect(names).toEqual(["MyCompany.Api", "MyCompany.Core", "MyCompany.Data"]);
+  });
+
+  it("follows multi-hop chain A → B → C", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.A/MyCompany.A.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\MyCompany.B\\MyCompany.B.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/MyCompany.B/MyCompany.B.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\MyCompany.C\\MyCompany.C.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/MyCompany.C/MyCompany.C.csproj": "<Project />",
+    });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["MyCompany.A"]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    const names = repo.packages.map((p) => p.name).sort();
+    expect(names).toEqual(["MyCompany.A", "MyCompany.B", "MyCompany.C"]);
+  });
+
+  it("handles cycles without infinite loop", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.A/MyCompany.A.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\MyCompany.B\\MyCompany.B.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/MyCompany.B/MyCompany.B.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\MyCompany.A\\MyCompany.A.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["MyCompany.A"]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    const names = repo.packages.map((p) => p.name).sort();
+    expect(names).toEqual(["MyCompany.A", "MyCompany.B"]);
+  });
+
+  it("excludes transitive deps outside the prefix filter", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\ThirdParty.Lib\\ThirdParty.Lib.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/ThirdParty.Lib/ThirdParty.Lib.csproj": "<Project />",
+    });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["MyCompany.Core"]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    expect(repo.packages.map((p) => p.name)).toEqual(["MyCompany.Core"]);
+  });
+
+  it("excludes transitive deps not found as on-disk candidates", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\MyCompany.Missing\\MyCompany.Missing.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      // MyCompany.Missing directory does not exist
+    });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["MyCompany.Core"]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    expect(repo.packages.map((p) => p.name)).toEqual(["MyCompany.Core"]);
+  });
+
+  it("leaves packages unchanged when no ProjectReferences exist", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": "<Project />",
+      "src/MyCompany.Auth/MyCompany.Auth.csproj": "<Project />",
+    });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), [
+      "MyCompany.Core",
+      "MyCompany.Auth",
+    ]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    const names = repo.packages.map((p) => p.name).sort();
+    expect(names).toEqual(["MyCompany.Auth", "MyCompany.Core"]);
+  });
+});
+
+// ── extractProjectReferenceNames ──
+
+describe("extractProjectReferenceNames", () => {
+  it("extracts package name from backslash paths", () => {
+    const xml = '<ProjectReference Include="..\\BSF.Core\\BSF.Core.csproj" />';
+    expect(extractProjectReferenceNames(xml)).toEqual(["BSF.Core"]);
+  });
+
+  it("extracts package name from forward-slash paths", () => {
+    const xml = '<ProjectReference Include="../BSF.Core/BSF.Core.csproj" />';
+    expect(extractProjectReferenceNames(xml)).toEqual(["BSF.Core"]);
+  });
+
+  it("extracts multiple references from one file", () => {
+    const xml = [
+      "<ItemGroup>",
+      '  <ProjectReference Include="..\\A\\A.csproj" />',
+      '  <ProjectReference Include="..\\B\\B.csproj" />',
+      '  <ProjectReference Include="..\\C\\C.csproj" />',
+      "</ItemGroup>",
+    ].join("\n");
+    expect(extractProjectReferenceNames(xml)).toEqual(["A", "B", "C"]);
+  });
+
+  it("returns empty array for XML without ProjectReferences", () => {
+    const xml = '<Project Sdk="Microsoft.NET.Sdk"><ItemGroup /></Project>';
+    expect(extractProjectReferenceNames(xml)).toEqual([]);
   });
 });
 
