@@ -32,9 +32,9 @@
 | Input | *(none)* |
 | Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
-**Purpose:** Lists all configured repositories and their resolved package names. Call first to discover what's available before digging into any specific repo or package.
+**Purpose:** Lists all configured repositories and their resolved package names with one-line summaries from `.csproj` metadata (`<PackageDescription>` + `<PackageTags>`). Call first to discover what's available before digging into any specific repo or package.
 
-**Output:** Markdown listing of repos with their package names. Warns if repo resolution was incomplete.
+**Output:** Markdown listing of repos with their packages in `- **PkgName** — summary` format (falls back to `- **PkgName**` when no `.csproj` metadata). Warns if repo resolution was incomplete.
 
 ### `dig_repo_overview` — Level 1: Repo Overview
 

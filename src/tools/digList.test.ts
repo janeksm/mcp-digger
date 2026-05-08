@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe("digList", () => {
-  it("lists repos and their package names", async () => {
+  it("lists repos and their package names with bold formatting", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/X.cs": "namespace MyLib; public class X { }",
@@ -38,7 +38,7 @@ describe("digList", () => {
 
     expect(result).toContain("# Available Packages");
     expect(result).toContain("## myrepo");
-    expect(result).toContain("- MyLib");
+    expect(result).toContain("- **MyLib**");
   });
 
   it("lists multiple repos with their packages", async () => {
@@ -59,9 +59,9 @@ describe("digList", () => {
     const result = await digList(config);
 
     expect(result).toContain("## repo1");
-    expect(result).toContain("- Alpha");
+    expect(result).toContain("- **Alpha**");
     expect(result).toContain("## repo2");
-    expect(result).toContain("- Beta");
+    expect(result).toContain("- **Beta**");
   });
 
   it("shows wildcard repos with resolved packages", async () => {
@@ -80,7 +80,48 @@ describe("digList", () => {
     const result = await digList(config);
 
     expect(result).toContain("## MyCompany.Libs");
-    expect(result).toContain("- MyCompany.Core");
+    expect(result).toContain("- **MyCompany.Core**");
+  });
+
+  it("includes .csproj summaries when available", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const csproj = [
+      '<Project Sdk="Microsoft.NET.Sdk">',
+      "  <PropertyGroup>",
+      "    <PackageDescription>Core domain primitives</PackageDescription>",
+      "    <PackageTags>ddd shared-kernel</PackageTags>",
+      "  </PropertyGroup>",
+      "</Project>",
+    ].join("\n");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/MyLib.csproj": csproj,
+      "src/MyLib/X.cs": "namespace MyLib; public class X { }",
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digList(config);
+
+    expect(result).toContain("- **MyLib** — Core domain primitives (tags: ddd shared-kernel)");
+  });
+
+  it("renders cleanly when .csproj has no description", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/MyLib.csproj": '<Project Sdk="Microsoft.NET.Sdk" />',
+      "src/MyLib/X.cs": "namespace MyLib; public class X { }",
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digList(config);
+
+    expect(result).toContain("- **MyLib**");
+    expect(result).not.toContain("— ");
   });
 
   it("shows 'no packages resolved' for wildcard with zero matches", async () => {
