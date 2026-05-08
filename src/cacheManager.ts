@@ -35,6 +35,17 @@ export async function isFresh(
 }
 
 /**
+ * Read the cached commit hash for a repo. Returns undefined if no cache exists.
+ */
+export async function readCachedHash(
+  cacheDir: string,
+  repoName: string,
+): Promise<string | undefined> {
+  const meta = await readMeta(cacheDir, repoName);
+  return meta?.commitHash;
+}
+
+/**
  * Record that a repo's cache is now up to date at the given commit.
  */
 export async function markFresh(

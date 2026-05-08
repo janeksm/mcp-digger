@@ -1,6 +1,6 @@
 # mcp-digger
 
-Node.js/TypeScript MCP server that gives Claude Code progressive access to internal .NET NuGet shared library source. One health-check tool (`dig_status`), a discovery tool (`dig_list`), and six dig tools: repo overview (package listing with summaries), package overview (docs + key types), package files (source file listing), lookup (symbol-to-file search, supports cross-package), signatures (stripped public API), file (full source). Claude decides when to escalate based on tool descriptions.
+Node.js/TypeScript MCP server that gives Claude Code progressive access to .NET NuGet package source code. One health-check tool (`dig_status`), a discovery tool (`dig_list`), six dig tools: repo overview (package listing with summaries), package overview (docs + key types), package files (source file listing), lookup (symbol-to-file search, supports cross-package), signatures (stripped public API), file (full source), and one operational tool (`dig_refresh` — force cache invalidation). Claude decides when to escalate based on tool descriptions.
 
 ## Claude Rules
 
@@ -58,6 +58,7 @@ src/
     digLookup.ts        ← Level 2: keyword search over type/method index → matching file paths
     digSignatures.ts    ← Level 2: stripped C# signatures filtered by keyword (type declarations, method sigs, XML docs)
     digFile.ts          ← Level 3: full source of a single file
+    digRefresh.ts       ← Operational: force-invalidate cache for one or all repos
 ```
 
 ## Key Patterns

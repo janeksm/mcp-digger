@@ -8,6 +8,7 @@ import { debug, error, initLogger } from "./logger.js";
 import { registerDigFile } from "./tools/digFile.js";
 import { registerDigList } from "./tools/digList.js";
 import { registerDigLookup } from "./tools/digLookup.js";
+import { registerDigRefresh } from "./tools/digRefresh.js";
 import { registerDigPackageFiles } from "./tools/digPackageFiles.js";
 import { registerDigPackageOverview } from "./tools/digPackageOverview.js";
 import { registerDigRepoOverview } from "./tools/digRepoOverview.js";
@@ -35,6 +36,7 @@ try {
   registerDigPackageOverview(server, config);
   registerDigPackageFiles(server, config);
   registerDigFile(server, config);
+  registerDigRefresh(server, config);
   registerDigStatus(server, config);
 
   if (config.warnings.length > 0) {

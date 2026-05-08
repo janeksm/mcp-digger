@@ -1,6 +1,6 @@
 # mcp-digger — MCP Design
 
-> MCP server exposing eight tools over stdio transport. Claude Code discovers tools via their descriptions and decides when to call each one.
+> MCP server exposing nine tools over stdio transport. Claude Code discovers tools via their descriptions and decides when to call each one.
 
 ## Server
 
@@ -96,6 +96,18 @@
 
 **Output:** Markdown with fenced C# code blocks per matching file. Headings show symbol name with generics and kind with modifiers for type matches (e.g. `EntityBase<TId> (abstract class)`), or file path for method matches. Each file has a generated header with package name and commit hash. Uses the same index as `dig_lookup` for search and per-file signature cache under `signatures/` directory, both invalidated by commit hash.
 
+### `dig_refresh` — Operational: Cache Refresh
+
+| Field | Value |
+|-------|-------|
+| File | `src/tools/digRefresh.ts` |
+| Input | `repoName?: string` — Name of the repository to refresh (as shown by dig_list). Omit to refresh all repos |
+| Annotations | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
+
+**Purpose:** Force-refreshes cached indexes for one or all repositories. Use when search results seem wrong, after mcp-digger was upgraded, or when you get "no matches" and want to rule out stale cache. For managed repos: fetches latest from remote, then clears all cached indexes. For local repos: re-reads HEAD, then clears all cached indexes. Unlike auto-refresh (which only invalidates when commit hash changes), this tool invalidates unconditionally.
+
+**Output:** Markdown summary with per-repo details: mode (local/managed), package count, old → new commit hash, and cache-cleared confirmation. Per-repo errors are captured in the summary (not thrown). Subsequent tool calls rebuild indexes lazily.
+
 ### `dig_file` — Level 3: Full Source
 
 | Field | Value |
@@ -117,6 +129,9 @@ dig_status  →  dig_list  →  dig_repo_overview(repo)    →  dig_package_over
 (health)       (discover)   (README + package listing)    (docs, interfaces, classes)          (symbol → file search)    (full source)
                                                         →  dig_package_files(repo, pkg)      →  dig_signatures(pkg, kw)
                                                            (source file listing)                 (stripped public API)
+
+dig_refresh(repo?)  ← force cache invalidation, suggested by "no matches" messages
+(operational)
 ```
 
 Each tool's description guides Claude on when to escalate to the next level.

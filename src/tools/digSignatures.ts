@@ -117,7 +117,7 @@ export async function digSignatures(
       if (matchedFiles.size === 0) {
         return toolSuccess(
           `# ${packageName} — signatures: "${keyword}"\n\n` +
-          `No matches for '${keyword}'. Try a broader term or call dig_lookup to see available types.`,
+          `No matches for '${keyword}'. Try a broader term, call dig_lookup to see available types, or call dig_refresh to force a re-index.`,
         );
       }
 

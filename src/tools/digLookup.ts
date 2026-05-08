@@ -51,7 +51,7 @@ type LookupMode = "symbol" | "implements" | "references";
 // ── Public API ──
 
 const OPTIONAL_PACKAGE_NAME_PARAM = PACKAGE_NAME_PARAM.optional().describe(
-  "Exact name of the internal NuGet package (e.g. 'MyCompany.Core'). Omit to search all packages.",
+  "Exact name of the NuGet package (e.g. 'MyCompany.Core'). Omit to search all packages.",
 );
 
 export function registerDigLookup(
@@ -110,7 +110,7 @@ export async function digLookup(
       if (matches.length === 0) {
         return toolSuccess(
           `# ${packageName} — lookup: "${keyword}"\n\n` +
-          `No matches for '${keyword}'. Try a broader term or call dig_package_overview to see available types.`,
+          `No matches for '${keyword}'. Try a broader term, call dig_package_overview to see available types, or call dig_refresh to force a re-index.`,
         );
       }
 
@@ -243,7 +243,7 @@ const SYMBOL_SEARCH_OPTS: CrossPackageIndexOpts = {
   searchFn: searchIndex,
   formatLineFn: formatMatchLine,
   countNoun: "match",
-  noMatchMsg: (kw) => `No matches for '${kw}' across any package. Try a broader term or call dig_list to see available packages.`,
+  noMatchMsg: (kw) => `No matches for '${kw}' across any package. Try a broader term, call dig_list to see available packages, or call dig_refresh to force a re-index.`,
 };
 
 const IMPLEMENTS_SEARCH_OPTS: CrossPackageIndexOpts = {
@@ -252,7 +252,7 @@ const IMPLEMENTS_SEARCH_OPTS: CrossPackageIndexOpts = {
   searchFn: searchIndexForImplementors,
   formatLineFn: formatImplementsMatchLine,
   countNoun: "implementor",
-  noMatchMsg: (kw) => `No types implementing '${kw}' found across any package. Verify the exact type name.`,
+  noMatchMsg: (kw) => `No types implementing '${kw}' found across any package. Verify the exact type name or call dig_refresh to force a re-index.`,
 };
 
 async function crossPackageIndexSearch(
@@ -422,7 +422,7 @@ async function digLookupImplements(
       if (matches.length === 0) {
         return toolSuccess(
           `# ${packageName} — implements: "${keyword}"\n\n` +
-          `No types implementing '${keyword}' found. Try omitting packageName to search cross-package.`,
+          `No types implementing '${keyword}' found. Try omitting packageName to search cross-package, or call dig_refresh to force a re-index.`,
         );
       }
 
@@ -478,7 +478,7 @@ async function digLookupReferences(
       if (refs.length === 0) {
         return toolSuccess(
           `# ${packageName} — references: "${keyword}"\n\n` +
-          `No references to '${keyword}' found. Try omitting packageName to search cross-package.`,
+          `No references to '${keyword}' found. Try omitting packageName to search cross-package, or call dig_refresh to force a re-index.`,
         );
       }
 
@@ -570,7 +570,7 @@ async function digLookupReferencesAllPackages(
   if (allResults.length === 0) {
     return toolSuccess(
       `# Cross-package references: "${keyword}"\n\n` +
-      `No references to '${keyword}' found across any package.`,
+      `No references to '${keyword}' found across any package. Verify the exact type name or call dig_refresh to force a re-index.`,
     );
   }
 
