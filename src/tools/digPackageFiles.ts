@@ -60,9 +60,17 @@ export async function digPackageFiles(
     const lines: string[] = [];
     lines.push(`# ${pkg.name} — Source Files\n`);
 
-    for (const f of csFiles.sort()) {
-      const relPath = f.slice(pkg.pathInRepo.length + 1);
-      lines.push(`- ${relPath}`);
+    const sortedFiles = csFiles.sort();
+    const relPaths = sortedFiles.map((f) => f.slice(pkg.pathInRepo.length + 1));
+
+    const summary = buildDirectorySummary(relPaths);
+    if (summary) {
+      lines.push(summary);
+      lines.push("");
+    }
+
+    for (const rel of relPaths) {
+      lines.push(`- ${rel}`);
     }
 
     lines.push("");
@@ -70,4 +78,33 @@ export async function digPackageFiles(
 
     return toolSuccess(lines.join("\n").trimEnd());
   });
+}
+
+// ── Helpers ──
+
+export function buildDirectorySummary(relPaths: string[]): string | undefined {
+  const dirCounts = new Map<string, number>();
+  let rootFiles = 0;
+
+  for (const p of relPaths) {
+    const slashIdx = p.indexOf("/");
+    if (slashIdx === -1) {
+      rootFiles++;
+    } else {
+      const dir = p.slice(0, slashIdx);
+      dirCounts.set(dir, (dirCounts.get(dir) ?? 0) + 1);
+    }
+  }
+
+  if (dirCounts.size === 0) return undefined;
+
+  const parts = [...dirCounts.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([dir, count]) => `${dir}/ (${count})`);
+
+  if (rootFiles > 0) {
+    parts.push(`${rootFiles} root file${rootFiles === 1 ? "" : "s"}`);
+  }
+
+  return parts.join(" · ");
 }
