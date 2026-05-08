@@ -10,7 +10,7 @@ import { ensureReady } from "../repoManager.js";
 
 // ── Tool description (shown to Claude Code) ──
 
-const DESCRIPTION = `Digs to the deepest level — full source of a single file from an internal package.
+const DESCRIPTION = `Digs to the deepest level — full source of a single file from a package.
 Call this only when you need to understand the actual implementation — for example
 to trace specific behaviour, understand a complex algorithm, or debug an unexpected
 result. Provide both package name and file path (relative path as shown by

@@ -5,7 +5,7 @@ import { error as logError } from "../logger.js";
 import { withRepoLock } from "../repoLock.js";
 import { ensureReady, type RepoReadyResult } from "../repoManager.js";
 
-export const PACKAGE_NAME_PARAM = z.string().describe("Exact name of the internal NuGet package (e.g. 'MyCompany.Core')");
+export const PACKAGE_NAME_PARAM = z.string().describe("Exact name of the NuGet package (e.g. 'MyCompany.Core')");
 
 export const FILE_CHAR_LIMIT = 1_000_000;
 

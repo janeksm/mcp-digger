@@ -1,8 +1,23 @@
 {
   "name": "mcp-digger",
-  "version": "0.0.1",
-  "description": "MCP server providing Claude Code with progressive, on-demand access to internal .NET NuGet shared library source.",
+  "version": "1.0.0",
+  "description": "MCP server giving Claude Code progressive, on-demand access to .NET NuGet package source code.",
   "type": "module",
+  "license": "MIT",
+  "author": "Janeks Malinovskis",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/janeksm/mcp-digger.git"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "claude",
+    "dotnet",
+    "nuget",
+    "csharp",
+    "source-code"
+  ],
   "main": "./dist/index.js",
   "bin": {
     "mcp-digger": "./dist/index.js"
@@ -18,7 +33,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

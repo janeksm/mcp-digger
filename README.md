@@ -1,284 +1,141 @@
 # mcp-digger
 
-MCP server that gives Claude Code progressive, on-demand access to internal .NET NuGet shared library source code. Claude starts with a lightweight overview and digs deeper only when needed — minimising token usage while preserving full fidelity when required.
+An MCP server that gives Claude Code progressive, on-demand access to .NET NuGet package source code. Point it at your NuGet library repos and Claude can browse packages, search symbols, read signatures, and pull full source — without cloning anything into your working directory.
 
-## How It Works
+## How it works
 
-Eight MCP tools. One for diagnosing setup, one for discovery, six for escalating detail as needed:
+mcp-digger exposes eight tools that Claude calls automatically, escalating from broad to deep:
 
-| Tool | What it returns | Token cost |
-|------|----------------|------------|
-| `dig_status` | Health check — validates config and tests git connectivity for every configured repo | Very low |
-| `dig_list` | Lists all configured repos and their resolved package names | Very low |
-| `dig_repo_overview` | Repo root README + one-line-per-package listing with .csproj metadata summaries | Low |
-| `dig_package_overview` | Full overview for a single package: docs, key interfaces, abstract classes | Low |
-| `dig_package_files` | Lists all C# source files in a package (excluding generated files) | Low |
-| `dig_lookup` | Searches a package's type/method index by keyword, returns matching file paths | Low |
-| `dig_signatures` | Stripped C# signatures filtered by keyword: type declarations, method signatures, XML docs | Medium |
-| `dig_file` | Full source of a single file | High |
+| Tool | Level | What it does |
+|------|-------|-------------|
+| `dig_status` | Health | Config summary + connectivity check per repo |
+| `dig_list` | Discovery | Lists all configured repos and their packages |
+| `dig_repo_overview` | L1 | Repo README + package listing with .csproj summaries |
+| `dig_package_overview` | L1 | Full package docs, key interfaces, abstract classes |
+| `dig_package_files` | L1 | Source file listing for a package |
+| `dig_lookup` | L2 | Keyword search over type/method index (supports cross-package) |
+| `dig_signatures` | L2 | Stripped C# public API signatures filtered by keyword |
+| `dig_file` | L3 | Full source of a single file |
 
-Claude Code decides when to escalate based on the tool descriptions — no manual intervention needed. Call `dig_status` first when something looks off (auth error, stale data) to see exactly what the server sees.
+Claude decides when to escalate based on tool descriptions — you just ask questions about your libraries.
 
-## Quick Start
-
-### 1. Install
+## Install
 
 ```bash
 npm install -g mcp-digger
-# or use npx (no install needed)
 ```
 
-### 2. Create `.digger/config.json` in your .NET solution root
-
-```json
-{
-  "repos": [
-    {
-      "name": "my-shared-libs",
-      "url": "https://gitlab.company.com/shared/libs.git",
-      "sourceRoot": "src",
-      "packages": ["MyCompany.Core", "MyCompany.Auth"],
-      "auth": {
-        "strategy": "pat",
-        "PAT-EnvVarName": "MY_GITLAB_PAT"
-      }
-    }
-  ]
-}
-```
-
-Then put `MY_GITLAB_PAT=glpat-...` in a `.env` file in the solution root (never commit it).
-
-### 3. Add MCP server config
-
-Create `.mcp.json` in your .NET solution root:
-
-```json
-{
-  "mcpServers": {
-    "mcp-digger": {
-      "command": "npx",
-      "args": ["mcp-digger"]
-    }
-  }
-}
-```
-
-### 4. Add `.gitignore` entries
-
-```
-.digger/source/
-.digger/cache/
-.digger/debug.log
-.env
-```
-
-### 5. Add to your solution's `CLAUDE.md`
-
-```markdown
-## Shared Internal Libraries
-
-This project uses internal NuGet packages. Use mcp-digger tools to understand them:
-
-- **`dig_status`** — run first if anything looks broken (auth errors, missing packages)
-- **`dig_list`** — discover available repos and packages
-- **`dig_repo_overview`** — see what packages a repo contains and their summaries
-- **`dig_package_overview`** — understand a specific package's key types and interfaces
-- **`dig_package_files`** — list source files in a package
-- **`dig_lookup`** — when you need to find which file contains a specific type or method
-- **`dig_signatures`** — when you need exact method overloads, generic constraints, or interface members
-- **`dig_file`** — only when you need implementation detail of a specific file
-
-Do not modify anything under `.digger/source/` or `.digger/cache/`.
-```
-
-## Testing Locally with Claude Code
-
-### Option A: Run from source (during development)
-
-Build and register the server pointing at a test .NET solution:
+Or run directly:
 
 ```bash
-# In the mcp-digger repo
-npm install
-npm run build
-
-# In your .NET solution, create .mcp.json:
+npx mcp-digger
 ```
 
-```json
-{
-  "mcpServers": {
-    "mcp-digger": {
-      "command": "node",
-      "args": ["C:/path/to/mcp-digger/dist/index.js"]
-    }
-  }
-}
-```
-
-Then open Claude Code in your .NET solution directory. The MCP server starts automatically when Claude invokes a tool.
-
-### Option B: Use npx (after publishing)
-
-With the `.mcp/mcp-config.json` shown in Quick Start, just open Claude Code in your .NET solution directory.
-
-### Verifying it works
-
-1. Open Claude Code in the .NET solution directory
-2. Ask Claude: *"Run dig_status and show me what's configured"* — confirms the server is wired up and repos are reachable
-3. Ask a follow-up like: *"What shared internal packages are available?"* — Claude should call `dig_list` then `dig_repo_overview`
-4. Ask: *"Where is the IOrderService interface defined?"* — Claude should call `dig_lookup`
-
-### Debug logging
-
-Enable file-based debug logging to see what the MCP server is doing. Set `"debug": true` in `.digger/config.json`. Logs are written to `.digger/debug.log`.
+Requires Node.js 20+ and `git` on PATH.
 
 ## Configuration
 
-### `.digger/config.json`
+Create `.digger/config.json` in your workspace root:
 
-| Field | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `repos` | Yes | — | Array of repo definitions |
-| `localRepos` | No | — | Object `{ repoName: path }` mapping repo names to local clones (Mode B) |
-| `debug` | No | `false` | Enable debug logging to `.digger/debug.log` |
-
-Per repo:
-
-| Field | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `name` | Yes | — | Repo label, used as clone dir name. Must be a plain identifier (no `*`) |
-| `url` | No | — | Git clone URL (required unless the repo has a `localRepos` entry) |
-| `sourceRoot` | No | `"src"` | Relative path where package dirs live |
-| `packages` | No | auto-discover | Explicit list of package names. Omit or leave empty to auto-discover every non-test `.csproj` in the repo. Mutually exclusive with `packageFilter` |
-| `packageFilter` | No | — | Wildcard filter (e.g. `"BSF.*"`) — narrows packages to those referenced by the workspace and matching the prefix. See [Package filtering](#package-filtering). Mutually exclusive with `packages` |
-| `auth` | No | `{ strategy: "auto" }` | Git auth — see [Auth](#auth) below |
-
-When `packages` is omitted (or set to `[]`) and no `packageFilter` is set, mcp-digger scans the repo for directories containing a matching `.csproj` file (excluding `.Tests`, `.Specs`, `.Benchmarks`, `.IntegrationTests`).
-
-### Package filtering
-
-Large internal mono-repos often contain dozens of packages, most of which a given consuming solution doesn't reference. Listing them explicitly is tedious; auto-discovering everything inflates context. The `packageFilter` field narrows the package list to what's actually referenced by your .NET solution.
-
-```json
+```jsonc
 {
   "repos": [
     {
-      "name": "my-shared-libs",
-      "url": "https://gitlab.company.com/shared/libs.git",
-      "packageFilter": "MyCompany.*",
-      "auth": { "strategy": "pat", "PAT-EnvVarName": "COMPANY_GITLAB_PAT" }
-    }
-  ]
-}
-```
-
-**How it works** — the exposed package list is the intersection of three sets:
-
-1. **Referenced** — package names collected by recursively scanning the workspace for `*.sln`, `*.slnx`, `<PackageReference>` inside `.csproj` files, and `<PackageVersion>` / `<PackageReference>` inside `Directory.Packages.props`, `Directory.Build.props`, and `Directory.Build.targets`. Dirs `.git`, `.digger`, `node_modules`, `bin`, `obj`, `.vs`, `.idea`, and `packages` are skipped.
-2. **Matching the prefix** — only names that start with the filter prefix (everything before `*`). For `"MyCompany.*"` the prefix is `MyCompany.`.
-3. **Present in the repo** — only packages that actually exist as non-test `.csproj` directories in the shared-libs repo.
-
-**Rules**:
-- `packageFilter` must end with `*` and the prefix (part before `*`) must be non-empty and contain only safe characters (`A-Za-z0-9._-`).
-- `packageFilter` and `packages` are mutually exclusive — you cannot specify both.
-- `*` is not allowed in the repo `name` — names are plain identifiers.
-
-**Cache file** — every scan writes its full result to `.digger/cache/solution-scan.json`. Inspect it when diagnosing matches; it lists the solution/props/targets files found, the resolved `.csproj` set, and the deduped package list.
-
-**If nothing matches** — if the intersection is empty (e.g. the solution doesn't reference any `MyCompany.*` package, or the prefix is wrong) the tools surface an actionable error asking you to either fix the config or switch to an explicit `packages` list. Call `dig_status` to see the scan summary.
-
-### Two Repo Modes
-
-**Mode A — Managed download** (default): mcp-digger shallow-clones the repo into `.digger/source/<repoName>` and keeps it updated automatically.
-
-**Mode B — Local repo**: When `localRepos` maps a repo name to a local path, mcp-digger reads from your existing clone. It never fetches or modifies your repo. If the local path is missing or invalid but `url` is configured, it falls back to Mode A with a warning.
-
-Example:
-
-```json
-{
-  "localRepos": {
-    "my-shared-libs": "C:/dev/my-shared-libs"
-  },
-  "repos": [
-    { "name": "my-shared-libs", "url": "https://gitlab.company.com/shared/libs.git" }
-  ]
-}
-```
-
-### Auth
-
-Each repo has its own `auth` block. If omitted, the default is `{ "strategy": "auto" }` with no PAT.
-
-| Strategy | Behaviour |
-|----------|-----------|
-| `"auto"` | Try unauthenticated clone first; fall back to PAT if set |
-| `"pat"` | Always use PAT (fails at load if no PAT is configured) |
-| `"none"` | Never inject credentials, even if a PAT is configured |
-
-Two ways to supply a PAT — **mutually exclusive**:
-
-| Field | Description |
-|-------|-------------|
-| `auth.PAT` | Inline token. Convenient for local testing; **never commit this** |
-| `auth.PAT-EnvVarName` | Name of an env var to read the PAT from. This is what you want in the committed config |
-
-Example with env-var indirection:
-
-```json
-{
-  "repos": [
-    {
-      "name": "public-repo",
-      "url": "https://github.com/owner/public.git",
-      "auth": { "strategy": "none" }
-    },
-    {
-      "name": "private-repo",
-      "url": "https://gitlab.company.com/private.git",
+      "name": "my-libraries",
+      "url": "https://github.com/org/shared-libs.git",
+      "sourceRoot": "src",       // where package dirs live (default: "src")
+      "packages": ["MyCompany.Core", "MyCompany.Data"],  // or omit for auto-discovery
       "auth": {
         "strategy": "pat",
-        "PAT-EnvVarName": "COMPANY_GITLAB_PAT"
+        "PAT-EnvVarName": "GIT_PAT"  // reads from .env or environment
       }
     }
   ]
 }
 ```
 
-Put `COMPANY_GITLAB_PAT=glpat-...` in `.env` (or set it in your shell). mcp-digger loads `.env` automatically — actual environment variables always win over `.env` values.
+Works with any Git host (GitHub, GitLab, Azure DevOps, Bitbucket, self-hosted, etc.).
 
-### Environment Variables
+### Auto-discovery
 
-Only three env vars are used, all optional overrides for paths:
+Omit `packages` to auto-discover all non-test `.csproj` directories, or use `packageFilter` for prefix matching:
 
-| Variable | Description |
-|----------|-------------|
-| `DIGGER_CONFIG` | Override config file path (default: `.digger/config.json`) |
-| `MANAGED_SOURCE_DIR` | Override managed clone dir (default: `.digger/source`) |
-| `CACHE_DIR` | Override cache dir (default: `.digger/cache`) |
-
-All per-machine secrets (PATs) go through user-chosen env vars referenced by `auth.PAT-EnvVarName`. A `.env.sample` file is included as a template:
-
-```bash
-cp .env.sample .env
+```jsonc
+{
+  "repos": [
+    {
+      "name": "my-libraries",
+      "url": "https://github.com/org/shared-libs.git",
+      "packageFilter": "MyCompany.*"
+    }
+  ]
+}
 ```
 
-## Development
+### Local repos (Mode B)
 
-```bash
-npm install
-npm run build        # compile TypeScript
-npm run typecheck    # type-check without emitting
-npm test             # run all tests
-npm run test:watch   # watch mode
-npm run lint         # eslint
+If you already have the repo cloned locally, skip managed cloning:
+
+```jsonc
+{
+  "localRepos": {
+    "my-libraries": "C:/repos/shared-libs"
+  },
+  "repos": [
+    {
+      "name": "my-libraries",
+      "sourceRoot": "src"
+    }
+  ]
+}
 ```
 
-## Tech Stack
+### Auth strategies
 
-- Node.js 20+, TypeScript
-- `@modelcontextprotocol/sdk` (official MCP SDK)
-- Git CLI via `child_process` (no git libraries)
-- Vitest for testing
+| Strategy | Behavior |
+|----------|----------|
+| `auto` (default) | Try unauthenticated, fall back to PAT if set |
+| `pat` | Always use PAT (fatal if not set) |
+| `none` | Never authenticate |
+
+PATs can be inline (`"PAT": "..."`) or via environment variable indirection (`"PAT-EnvVarName": "MY_TOKEN"`). The `.env` file in your workspace root is loaded automatically.
+
+### Environment variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DIGGER_CONFIG` | `.digger/config.json` | Override config file path |
+| `MANAGED_SOURCE_DIR` | `.digger/source` | Override managed clone directory |
+| `CACHE_DIR` | `.digger/cache` | Override cache directory |
+
+## Claude Code setup
+
+Add to your Claude Code MCP config (`.claude/settings.json` or project settings):
+
+```json
+{
+  "mcpServers": {
+    "digger": {
+      "command": "npx",
+      "args": ["-y", "mcp-digger"]
+    }
+  }
+}
+```
+
+## Debugging
+
+Enable debug logging in your config:
+
+```jsonc
+{
+  "debug": true,
+  "repos": [...]
+}
+```
+
+Logs are written to `.digger/debug.log`.
+
+## License
+
+MIT

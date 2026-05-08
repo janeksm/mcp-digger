@@ -5,3 +5,7 @@ dist/
 .DS_Store
 .vscode/
 .idea/
+.digger/
+.claude/settings.local.json
+.mcp.json
+.playwright-mcp/
