@@ -46,7 +46,7 @@
 
 **Purpose:** Lists all packages in a repository with one-line summaries from `.csproj` metadata (`<PackageDescription>` + `<PackageTags>`), plus the repo root `README.md` when it exists. Use to decide which package to zoom into with `dig_package_overview`.
 
-**Output:** Repo root README (if present) followed by a bullet list of packages with summaries and a count footer. Returns unknown-repo message when name doesn't match.
+**Output:** Repo root README (if present, with non-architectural sections filtered out — install commands, CI/CD, badges, license, versioning, etc. are stripped by heading keyword and content-shape heuristics) followed by a bullet list of packages with summaries and a count footer. Returns unknown-repo message when name doesn't match.
 
 ### `dig_package_overview` — Level 1: Package Overview
 

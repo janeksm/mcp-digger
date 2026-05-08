@@ -5,6 +5,7 @@ import type { DiggerConfig } from "../config.js";
 import { formatUnknownRepo } from "../config.js";
 import { GitError, readFile } from "../gitClient.js";
 import { debug } from "../logger.js";
+import { filterReadmeSections } from "../readmeFilter.js";
 import { extractPackageSummary } from "../sourceExtractor.js";
 
 // ── Tool description (shown to Claude Code) ──
@@ -54,7 +55,7 @@ export async function digRepoOverview(
     if (repo.packages.length === 0) {
       try {
         const readme = await readFile(result.sourcePath, "README.md");
-        sections.push(readme.trim());
+        sections.push(filterReadmeSections(readme).trim());
         sections.push("\n---\n");
       } catch (err) {
         if (!(err instanceof GitError)) throw err;
@@ -83,7 +84,7 @@ export async function digRepoOverview(
     ]);
 
     if (readme) {
-      sections.push(readme.trim());
+      sections.push(filterReadmeSections(readme).trim());
       sections.push("\n---\n");
     }
 

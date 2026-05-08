@@ -125,6 +125,39 @@ describe("digRepoOverview", () => {
     expect(result.text).toContain("*2 packages");
   });
 
+  it("filters noise sections from repo README", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const readme = [
+      "# My Repo",
+      "",
+      "## Architecture",
+      "",
+      "Domain-driven design with CQRS.",
+      "",
+      "## Installation",
+      "",
+      "```",
+      "dotnet add package MyRepo",
+      "```",
+    ].join("\n");
+    const repoDir = await initRepo(tmpDir, {
+      "README.md": readme,
+      "src/MyLib/MyLib.csproj": '<Project Sdk="Microsoft.NET.Sdk" />',
+      "src/MyLib/Class1.cs": "namespace MyLib; public class Class1 { }",
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digRepoOverview(config, "myrepo");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("Domain-driven design with CQRS.");
+    expect(result.text).not.toContain("## Installation");
+    expect(result.text).not.toContain("dotnet add package");
+  });
+
   it("returns error when repo is unreachable", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const pkg = makePkg("Missing", "norepo", "src", cacheDir);
