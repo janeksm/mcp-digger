@@ -139,5 +139,7 @@ describe("digList", () => {
     const result = await digList(config);
 
     expect(result).toContain("No packages resolved");
+    expect(result).toContain("Diagnostic:");
+    expect(result).toContain("matched zero packages");
   });
 });

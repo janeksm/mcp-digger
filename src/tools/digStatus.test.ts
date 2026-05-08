@@ -214,19 +214,36 @@ describe("wildcard repo rendering", () => {
     expect(result).toContain("MyCompany.Core");
   });
 
-  it("indicates when wildcard repo has not yet been resolved", async () => {
+  it("shows diagnostic when no solution files exist for wildcard repo", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/MyCompany.Core/A.cs": "namespace Core;",
     });
-    // No solution files — scan produces an empty set, but it still runs.
     const repo = makeWildcardRepo("MyCompany.Libs", tmpDir, { packageFilter: "MyCompany.*", localPath: repoDir });
     const config = makeConfig([repo], tmpDir, cacheDir);
 
     const result = await digStatus(config);
 
     expect(result).toContain('Discovery:** wildcard (filter "MyCompany.*")');
-    expect(result).toContain("Matched packages:** not yet resolved");
+    expect(result).toContain("Matched packages:** 0");
+    expect(result).toContain("no .sln/.slnx files found in workspace");
+  });
+
+  it("shows diagnostic when refs exist but none match prefix", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyCompany.Core/A.cs": "namespace Core;",
+    });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["Newtonsoft.Json", "SomeOther.Lib"]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.Libs", tmpDir, { packageFilter: "MyCompany.*", localPath: repoDir });
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("Matched packages:** 0");
+    expect(result).toContain("no workspace-referenced packages match prefix");
   });
 });
 

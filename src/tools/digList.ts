@@ -50,7 +50,11 @@ export async function digList(config: DiggerConfig): Promise<string> {
     const header = `## ${repo.name}`;
 
     if (repo.packages.length === 0) {
-      sections.push(`${header}\n\n*No packages resolved.*`);
+      const repoError = repoResults?.get(repo.name)?.error;
+      const detail = repoError
+        ? `*No packages resolved.*\n\n> **Diagnostic:** ${repoError.split(/\r?\n/).join("\n> ")}`
+        : `*No packages resolved.*`;
+      sections.push(`${header}\n\n${detail}`);
       continue;
     }
 

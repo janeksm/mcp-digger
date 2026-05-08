@@ -196,8 +196,10 @@ function formatDiscovery(repo: RepoConfig, scan: ScanResult | null): string[] {
   if (repo.discoveryMode === "wildcard") {
     const prefix = filterPrefix(repo.packageFilter!);
     lines.push(`- **Discovery:** wildcard (filter "${repo.packageFilter}")`);
+    const matchingRefs = scan
+      ? scan.packages.filter((p) => p.startsWith(prefix))
+      : [];
     if (scan) {
-      const matchingRefs = scan.packages.filter((p) => p.startsWith(prefix));
       lines.push(
         `- **Referenced matching prefix:** ${matchingRefs.length}${matchingRefs.length > 0 ? ` (${matchingRefs.join(", ")})` : ""}`,
       );
@@ -207,6 +209,21 @@ function formatDiscovery(repo: RepoConfig, scan: ScanResult | null): string[] {
     if (repo.packages.length > 0) {
       const names = repo.packages.map((p) => p.name).join(", ");
       lines.push(`- **Matched packages:** ${repo.packages.length} (${names})`);
+    } else if (scan && scan.solutionFiles.length === 0) {
+      lines.push(
+        `- **Matched packages:** 0 — no .sln/.slnx files found in workspace to cross-reference against packageFilter '${repo.packageFilter}'. ` +
+        `Use an explicit \`packages\` list, or omit \`packageFilter\` for auto-discovery.`,
+      );
+    } else if (scan && matchingRefs.length === 0) {
+      lines.push(
+        `- **Matched packages:** 0 — no workspace-referenced packages match prefix '${prefix}'. ` +
+        `Verify that solution files reference the expected packages, or use an explicit \`packages\` list.`,
+      );
+    } else if (scan) {
+      lines.push(
+        `- **Matched packages:** 0 — workspace references ${matchingRefs.length} package(s) matching prefix '${prefix}', ` +
+        `but none were found on disk in the repo. Verify the repo contains the expected package directories.`,
+      );
     } else {
       lines.push(
         `- **Matched packages:** not yet resolved — run dig_list to clone the repo and compute the intersection`,
