@@ -58,6 +58,24 @@ describe("digPackageOverview", () => {
     expect(result.text).toContain("IFoo");
     expect(result.text).not.toContain("PkgB");
     expect(result.text).not.toContain("IBar");
+    expect(result.text).toContain("*1 source file");
+  });
+
+  it("shows plural file count", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/Domain/User.cs": "namespace MyLib.Domain;\npublic class User { }",
+      "src/MyLib/Services/Auth.cs": "namespace MyLib.Services;\npublic class Auth { }",
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digPackageOverview(config, "myrepo", "MyLib");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("*2 source files");
   });
 
   it("does not include Source Files section", async () => {

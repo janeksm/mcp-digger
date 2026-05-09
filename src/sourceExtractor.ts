@@ -119,6 +119,12 @@ export async function extractOverview(
     sections.push("");
   }
 
+  sections.push(
+    csFiles.length === 0
+      ? "*No source files.*"
+      : `*${csFiles.length} source file${csFiles.length === 1 ? "" : "s"} — use dig_lookup to find specific types.*`,
+  );
+
   return sections.join("\n").trimEnd() + "\n";
 }
 
