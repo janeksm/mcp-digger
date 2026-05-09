@@ -505,6 +505,18 @@ function formatPlaceholder(indent: string, sigPart: string): string {
     : `${indent}{ /* ... */ }`;
 }
 
+function isNonCodeLine(
+  line: string,
+  wasInComment: boolean,
+  endsInComment: boolean,
+): boolean {
+  return (
+    !line ||
+    (wasInComment && endsInComment) ||
+    (!wasInComment && (line.startsWith("//") || line.startsWith("/*")))
+  );
+}
+
 function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
   const lines = source.split("\n");
   const entries: IndexEntry[] = [];
@@ -512,15 +524,20 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
   let depth = 0;
   const typeDepths: number[] = [];
   let pendingType: string | null = null;
+  let inBlockComment = false;
 
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i]!.trim();
-    if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) {
-      continue;
-    }
+    if (!trimmed && !inBlockComment) continue;
 
-    const opens = countChar(trimmed, "{");
-    const closes = countChar(trimmed, "}");
+    const analysis = analyzeLine(trimmed, inBlockComment);
+    const wasInBlockComment = inBlockComment;
+    inBlockComment = analysis.endsInComment;
+
+    if (isNonCodeLine(trimmed, wasInBlockComment, analysis.endsInComment)) continue;
+
+    const opens = analysis.opens;
+    const closes = analysis.closes;
 
     const typeMatch = TYPE_DECL_RE.exec(trimmed);
     if (typeMatch) {
@@ -528,12 +545,16 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
       const name = typeMatch[2]!;
 
       let fullDecl = trimmed.slice(typeMatch.index + typeMatch[0].length);
-      if (!trimmed.includes("{") && !trimmed.includes(";")) {
+      if (opens === 0 && !trimmed.includes(";")) {
+        let fwdInBC = analysis.endsInComment;
         for (let j = i + 1; j < lines.length && j <= i + 5; j++) {
           const next = lines[j]!.trim();
-          if (!next || next.startsWith("//") || next.startsWith("/*") || next.startsWith("*")) continue;
+          const fwdAnalysis = analyzeLine(next, fwdInBC);
+          const wasFwdInBC = fwdInBC;
+          fwdInBC = fwdAnalysis.endsInComment;
+          if (isNonCodeLine(next, wasFwdInBC, fwdAnalysis.endsInComment)) continue;
           fullDecl += " " + next;
-          if (next.includes("{") || next.includes(";")) break;
+          if (fwdAnalysis.opens > 0 || next.includes(";")) break;
         }
       }
 
@@ -543,7 +564,7 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
       const beforeKeyword = trimmed.slice(0, typeMatch.index + typeMatch[0].indexOf(typeKind));
       const modifiers = extractModifiers(beforeKeyword);
 
-      const baseTypes = parseBaseTypes(fullDecl);
+      const baseTypes = parseBaseTypes(fullDecl.replace(/\/\*.*?\*\//g, ""));
       const entry: IndexEntry = { symbol: name, kind: typeKind, filePath: relPath };
       if (baseTypes.length > 0) entry.baseTypes = baseTypes;
       if (generics) entry.generics = generics;
@@ -561,7 +582,7 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
       typeDepths.push(depth + opens);
       pendingType = null;
     } else {
-      pendingType = null;
+      if (!wasInBlockComment) pendingType = null;
       if (typeStack.length > 0) {
         const methodMatch = METHOD_DECL_RE.exec(trimmed);
         if (methodMatch && !NOT_METHOD.has(methodMatch[1]!)) {
@@ -584,14 +605,6 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
   }
 
   return entries;
-}
-
-function countChar(s: string, ch: string): number {
-  let count = 0;
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === ch) count++;
-  }
-  return count;
 }
 
 function parseBaseTypes(declarationText: string): string[] {

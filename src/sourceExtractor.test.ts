@@ -1332,6 +1332,151 @@ describe("extractIndex — generics and modifiers", () => {
   });
 });
 
+// ── Lexer-aware brace counting & block comment tracking ──
+
+describe("extractIndex — brace counting skips strings/chars/comments", () => {
+  it("ignores braces inside interpolated strings", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Logger.cs": [
+        "namespace Lib;",
+        "public class Logger",
+        "{",
+        "    public void Log(string name)",
+        "    {",
+        '        Console.WriteLine($"Hello {name}, welcome to {\\"world\\"}");',
+        "    }",
+        "    public void Other()",
+        "    {",
+        "    }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const log = entries.find((e) => e.symbol === "Log");
+    const other = entries.find((e) => e.symbol === "Other");
+    expect(log?.parentType).toBe("Logger");
+    expect(other?.parentType).toBe("Logger");
+  });
+
+  it("ignores braces inside char literals", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Parser.cs": [
+        "namespace Lib;",
+        "public class Parser",
+        "{",
+        "    public void Parse()",
+        "    {",
+        "        char open = '{';",
+        "        char close = '}';",
+        "    }",
+        "    public void Next()",
+        "    {",
+        "    }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Parse")?.parentType).toBe("Parser");
+    expect(entries.find((e) => e.symbol === "Next")?.parentType).toBe("Parser");
+  });
+
+  it("skips type declarations inside multi-line block comments", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Real.cs": [
+        "namespace Lib;",
+        "/*",
+        "public class FakeClass",
+        "{",
+        "    public void FakeMethod() { }",
+        "}",
+        "*/",
+        "public class RealClass",
+        "{",
+        "    public void RealMethod() { }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "FakeClass")).toBeUndefined();
+    expect(entries.find((e) => e.symbol === "FakeMethod")).toBeUndefined();
+    expect(entries.find((e) => e.symbol === "RealClass")?.kind).toBe("class");
+    expect(entries.find((e) => e.symbol === "RealMethod")?.parentType).toBe("RealClass");
+  });
+
+  it("handles block comment starting mid-line with Allman braces", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Service.cs": [
+        "namespace Lib;",
+        "public class Service /* this is a comment",
+        "   that spans multiple lines */",
+        "{",
+        "    public void DoWork()",
+        "    {",
+        "    }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Service")?.kind).toBe("class");
+    expect(entries.find((e) => e.symbol === "DoWork")?.parentType).toBe("Service");
+  });
+
+  it("ignores braces inside inline block comments", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Handler.cs": [
+        "namespace Lib;",
+        "public class Handler",
+        "{",
+        "    public void Process() /* { not a real brace } */",
+        "    {",
+        "    }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Handler")?.kind).toBe("class");
+    expect(entries.find((e) => e.symbol === "Process")?.parentType).toBe("Handler");
+  });
+
+  it("does not index declarations inside single-line block comments", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Commented.cs": [
+        "namespace Lib;",
+        "/* public class Fake { public void Hidden() { } } */",
+        "public class Real",
+        "{",
+        "    public void Visible() { }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Fake")).toBeUndefined();
+    expect(entries.find((e) => e.symbol === "Hidden")).toBeUndefined();
+    expect(entries.find((e) => e.symbol === "Real")?.kind).toBe("class");
+    expect(entries.find((e) => e.symbol === "Visible")?.parentType).toBe("Real");
+  });
+
+  it("ignores base type syntax inside inline block comments", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Inherited.cs": [
+        "namespace Lib;",
+        "public class Real /* : IFake */ : IReal",
+        "{",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Real")?.baseTypes).toEqual(["IReal"]);
+  });
+});
+
 // ── Serialization with baseTypes ──
 
 describe("serializeIndex / parseIndex — baseTypes", () => {
