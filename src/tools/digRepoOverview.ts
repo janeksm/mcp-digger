@@ -1,19 +1,17 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { TOOL_ANNOTATIONS, extractErrorMessage, toCallToolResult, toolError, toolSuccess, withRepoReady, type ToolResult } from "./shared.js";
+import { TOOL_ANNOTATIONS, toCallToolResult, toolError, toolSuccess, withRepoReady, type ToolResult } from "./shared.js";
 import { z } from "zod";
 import type { DiggerConfig } from "../config.js";
 import { formatUnknownRepo } from "../config.js";
 import { GitError, readFile } from "../gitClient.js";
 import { debug } from "../logger.js";
 import { filterReadmeSections } from "../readmeFilter.js";
-import { extractPackageSummary } from "../sourceExtractor.js";
 
 // ── Tool description (shown to Claude Code) ──
 
-const DESCRIPTION = `Lists all packages in a repository with one-line summaries from .csproj metadata,
-plus the repo root README.md when it exists. Use this to decide which package to
-zoom into with dig_package_overview.
-Call dig_list first to discover available repos, then call this with a repo name.`;
+const DESCRIPTION = `Returns the repo root README.md (architecture, conventions, design docs) when it exists.
+Use this to understand a repo's structure and design before digging into specific packages.
+Call dig_list first to discover available repos and their packages, then call this with a repo name.`;
 
 // ── Public API ──
 
@@ -53,55 +51,27 @@ export async function digRepoOverview(
     sections.push(`# ${repo.name}\n`);
 
     if (repo.packages.length === 0) {
-      try {
-        const readme = await readFile(result.sourcePath, "README.md");
-        sections.push(filterReadmeSections(readme).trim());
-        sections.push("\n---\n");
-      } catch (err) {
-        if (!(err instanceof GitError)) throw err;
-      }
-      sections.push("## Packages\n");
-      sections.push("*No packages resolved for this repo.*");
+      const readme = await readFile(result.sourcePath, "README.md").catch((err) => {
+        if (err instanceof GitError) return undefined;
+        throw err;
+      });
+      if (readme) sections.push(filterReadmeSections(readme).trim());
+      sections.push("\n*No packages resolved for this repo — see dig_list for details.*");
       return toolSuccess(sections.join("\n").trimEnd());
     }
 
-    const [readme, summaries] = await Promise.all([
-      readFile(result.sourcePath, "README.md").catch((err) => {
-        if (err instanceof GitError) return undefined;
-        throw err;
-      }),
-      Promise.all(
-        repo.packages.map(async (pkg) => {
-          try {
-            const summary = await extractPackageSummary(result.sourcePath, pkg);
-            return { name: pkg.name, summary };
-          } catch (err) {
-            debug("digRepoOverview", `summary failed for ${pkg.name}:`, extractErrorMessage(err));
-            return { name: pkg.name, summary: undefined };
-          }
-        }),
-      ),
-    ]);
+    const readme = await readFile(result.sourcePath, "README.md").catch((err) => {
+      if (err instanceof GitError) return undefined;
+      throw err;
+    });
 
     if (readme) {
       sections.push(filterReadmeSections(readme).trim());
-      sections.push("\n---\n");
     }
 
-    sections.push("## Packages\n");
-
-    for (const { name, summary } of summaries) {
-      if (summary) {
-        sections.push(`- **${name}** — ${summary}`);
-      } else {
-        sections.push(`- **${name}**`);
-      }
-    }
-
-    sections.push("");
     const count = repo.packages.length;
     sections.push(
-      `*${count} package${count === 1 ? "" : "s"} — call dig_package_overview for full details.*`,
+      `\n*${count} package${count === 1 ? "" : "s"} — see dig_list for the full listing, or dig_package_overview for details.*`,
     );
 
     if (result.warning) {

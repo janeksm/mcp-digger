@@ -26,7 +26,7 @@ afterEach(() => {
 // ── Basic functionality ──
 
 describe("digRepoOverview", () => {
-  it("returns repo root README and package listing with summaries", async () => {
+  it("returns repo root README without duplicate package listing", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "README.md": "# My Repo\n\nThis is the repo root readme.",
@@ -50,11 +50,12 @@ describe("digRepoOverview", () => {
     expect(result.isError).toBe(false);
     expect(result.text).toContain("# myrepo");
     expect(result.text).toContain("This is the repo root readme.");
-    expect(result.text).toContain("**MyLib** — Core domain library (tags: core)");
+    expect(result.text).not.toContain("## Packages");
+    expect(result.text).toContain("1 package");
     expect(result.text).toContain("dig_package_overview");
   });
 
-  it("handles packages without PackageDescription", async () => {
+  it("shows redirect line without README", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/MyLib.csproj": [
@@ -74,11 +75,12 @@ describe("digRepoOverview", () => {
     const result = await digRepoOverview(config, "myrepo");
 
     expect(result.isError).toBe(false);
-    expect(result.text).toContain("- **MyLib**");
-    expect(result.text).not.toContain("**MyLib** —");
+    expect(result.text).toContain("1 package");
+    expect(result.text).toContain("dig_list");
+    expect(result.text).not.toContain("## Packages");
   });
 
-  it("handles missing repo root README", async () => {
+  it("omits separator when no README exists", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/MyLib.csproj": '<Project Sdk="Microsoft.NET.Sdk" />',
@@ -92,8 +94,7 @@ describe("digRepoOverview", () => {
     const result = await digRepoOverview(config, "myrepo");
 
     expect(result.isError).toBe(false);
-    expect(result.text).toContain("## Packages");
-    expect(result.text).toContain("**MyLib**");
+    expect(result.text).toContain("1 package");
     expect(result.text).not.toContain("---");
   });
 
@@ -106,7 +107,7 @@ describe("digRepoOverview", () => {
     expect(result.text).toContain("Unknown repo");
   });
 
-  it("shows package count", async () => {
+  it("shows package count in redirect line", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/PkgA/PkgA.csproj": '<Project Sdk="Microsoft.NET.Sdk" />',
@@ -123,6 +124,7 @@ describe("digRepoOverview", () => {
     const result = await digRepoOverview(config, "myrepo");
 
     expect(result.text).toContain("*2 packages");
+    expect(result.text).toContain("dig_list");
   });
 
   it("filters noise sections from repo README", async () => {

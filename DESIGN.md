@@ -44,9 +44,9 @@
 | Input | `repoName: string` — Name of the repository to overview (as shown by dig_list) |
 | Annotations | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: true` |
 
-**Purpose:** Lists all packages in a repository with one-line summaries from `.csproj` metadata (`<PackageDescription>` + `<PackageTags>`), plus the repo root `README.md` when it exists. Use to decide which package to zoom into with `dig_package_overview`.
+**Purpose:** Returns the repo root `README.md` (architecture, conventions, design docs) when it exists. Use to understand a repo's structure and design before digging into specific packages. Call `dig_list` first to discover available repos and their packages.
 
-**Output:** Repo root README (if present, with non-architectural sections filtered out — install commands, CI/CD, badges, license, versioning, etc. are stripped by heading keyword and content-shape heuristics) followed by a bullet list of packages with summaries and a count footer. Returns unknown-repo message when name doesn't match.
+**Output:** Repo root README (if present, with non-architectural sections filtered out — install commands, CI/CD, badges, license, versioning, etc. are stripped by heading keyword and content-shape heuristics) followed by a package count with redirect to `dig_list` / `dig_package_overview`. Returns unknown-repo message when name doesn't match.
 
 ### `dig_package_overview` — Level 1: Package Overview
 
