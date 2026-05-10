@@ -1,6 +1,5 @@
 # mcp-digger — Implementation Progress
 
-> Tracks step-by-step progress for the implementation plan defined in [INIT_PLAN.md](INIT_PLAN.md).
 > Use `/accept <step>` to finalize a step (commit + mark done).
 
 | Step | Module | Status | Commit | Notes |
@@ -16,7 +15,7 @@
 | 9 | `index.ts` | done | 0d86c0a | MCP server entry point, register all tools |
 | 11 | `logger.ts` | done | ce6b566 | Debug logging service: file-based, config-driven, singleton |
 | 12 | `config.ts` | done | f92833f | .env file loading: env > .env > config defaults, .env.sample template |
-| 13 | `gitClient.ts`, `tools/digFile.ts` | done | eda3f53 | Security: PAT redaction in git errors + dig_file path traversal validation. Remaining findings tracked in [TODO.SEC.md](TODO.SEC.md) |
+| 13 | `gitClient.ts`, `tools/digFile.ts` | done | eda3f53 | Security: PAT redaction in git errors + dig_file path traversal validation. Remaining findings tracked in Phase 2 below |
 | 14 | `gitClient.ts` | done | 154e09d | Suppress GCM/credential prompts on auto strategy unauthenticated attempt |
 | 15 | `tools/digStatus.ts`, `gitClient.ts` | done | a2ceae8 | dig_status MCP tool, lsRemote() connectivity check, improved auth debug logging, DESIGN.md |
 | 16 | `config.ts`, `repoManager.ts`, `tools/digStatus.ts` | done | 5626ef3 | per-repo `auth` (strategy + PAT / PAT-EnvVarName), top-level `localRepos`, drop duplicated env vars, README rewrite with dig_status |
@@ -29,7 +28,7 @@
 
 ## Phase 2 — MCP Compliance & Security Hardening
 
-> Review against MCP best practices and security findings from [TODO.SEC.md](TODO.SEC.md).
+> Review against MCP best practices and security findings.
 
 | # | Task | Importance | Status | Rationale | Files |
 |---|------|-----------|--------|-----------|-------|
@@ -43,7 +42,7 @@
 | 8 | Atomic `meta.json` writes + per-repo mutex (SEC #6, #10) | High | done | 1747ebf | `src/cacheManager.ts`, `src/repoManager.ts`, `src/repoLock.ts`, `src/tools/digOverview.ts`, `src/tools/digSignatures.ts`, `src/tools/digFile.ts` |
 | 9 | Prototype-pollution hardening on `JSON.parse` (SEC #7) | Medium | done | 130ff1e | `src/config.ts`, `src/cacheManager.ts`, `src/solutionScanner.ts` |
 | 10 | Cap fan-out in `discoverPackages` (SEC #8) | Medium | done | 130ff1e | `src/config.ts` |
-| 11 | Close SEC #9 — log-file size cap already exists | Done | done | Verified: `MAX_LOG_SIZE = 5 * 1024 * 1024` at `logger.ts:12`, truncation at lines 58-63. Update TODO.SEC.md. | `TODO.SEC.md` |
+| 11 | Close SEC #9 — log-file size cap already exists | Done | done | Verified: `MAX_LOG_SIZE = 5 * 1024 * 1024` at `logger.ts:12`, truncation at lines 58-63. Verified in logger.ts. | `src/logger.ts` |
 | 12 | Low/info items: defensive filePath in readFile, skip symlinks, confirm SDK Zod enforcement (SEC #11, #12, #13) | Low | done | 130ff1e | `src/gitClient.ts`, `src/config.ts` |
 | 13 | Fix stale `dig_overview` references → `dig_list` in user-facing messages | Low | done | 69e51a1 | `src/tools/digStatus.ts`, `src/config.ts` |
 | 14 | Replace wildcard repo names with `packageFilter` field | High | done | 1bc6246 | `src/config.ts`, `src/repoManager.ts`, `src/cacheManager.ts`, `src/tools/*`, `DESIGN.md` |
@@ -107,5 +106,5 @@
 |---|------|----------|--------|--------|-----------|-------|
 | 1 | Use lexer-aware brace counting in `scanFileForIndex` | P1 | done | 9ff6e18 | `scanFileForIndex` uses naive `countChar("{")` / `countChar("}")` which counts braces inside string literals, interpolated strings, char literals, and inline comments. This corrupts the depth/type stack — methods get attributed to wrong parent types, or phantom types get indexed. Modern C# uses string interpolation (`$"Hello {name}"`) and JSON templates heavily, so this hits real code. **Fix:** replace `countChar` calls with `analyzeLine` (already exists in the same file for `stripCsBody`) or a simplified variant that returns open/close counts while skipping strings, chars, and comments. | `src/sourceExtractor.ts`, `src/sourceExtractor.test.ts` |
 | 2 | Track block comment state in `scanFileForIndex` | P1 | done | 9ff6e18 | The line-skip check (`trimmed.startsWith("//") \|\| trimmed.startsWith("/*") \|\| trimmed.startsWith("*")`) doesn't track multi-line block comment state. A block comment starting mid-line or spanning multiple lines without `*` prefixes will have its content parsed as real code — type/method declarations inside comments get indexed. **Fix:** add `inBlockComment` state variable (same pattern as `stripCsBody`), carry it across lines via `analyzeLine`'s `endsInComment` return. Likely solved together with P6-1 since both require switching to `analyzeLine`. | `src/sourceExtractor.ts`, `src/sourceExtractor.test.ts` |
-| 3 | Return `isError: true` from `dig_list` on total failure | P2 | in-progress | | `dig_list` catches `ensureAllReady` errors and appends a footer warning, but never sets `isError: true`. All other data tools signal errors properly. When ALL repos fail, the agent sees a success response and may not escalate to `dig_status`. **Fix:** track whether any repo resolved successfully; if none did and there was an error, return `toolError()` instead of `toolSuccess()`. Requires switching `digList` to use `toCallToolResult`. | `src/tools/digList.ts`, `src/tools/digList.test.ts` |
-| 4 | Document stale fallback design in DESIGN.md | P3 | in-progress | | Stale cache fallback is intentionally asymmetric across tools: `dig_lookup` symbol/implements and `dig_signatures` fall back to stale index; `dig_package_overview` falls back to stale overview; `dig_lookup` references has no fallback (reads source directly, no cached artifact); `dig_repo_overview`/`dig_package_files` have no fallback (lightweight, no cached artifact). This looks like an oversight without documentation. **Fix:** add a "Stale Fallback" subsection under Shared Conventions in DESIGN.md explaining the pattern and which tools have it. | `DESIGN.md` |
+| 3 | Return `isError: true` from `dig_list` on total failure | P2 | done | f8bc965 | `dig_list` catches `ensureAllReady` errors and appends a footer warning, but never sets `isError: true`. All other data tools signal errors properly. When ALL repos fail, the agent sees a success response and may not escalate to `dig_status`. **Fix:** track whether any repo resolved successfully; if none did and there was an error, return `toolError()` instead of `toolSuccess()`. Requires switching `digList` to use `toCallToolResult`. | `src/tools/digList.ts`, `src/tools/digList.test.ts` |
+| 4 | Document stale fallback design in DESIGN.md | P3 | done | e8550b6 | Stale cache fallback is intentionally asymmetric across tools: `dig_lookup` symbol/implements and `dig_signatures` fall back to stale index; `dig_package_overview` falls back to stale overview; `dig_lookup` references has no fallback (reads source directly, no cached artifact); `dig_repo_overview`/`dig_package_files` have no fallback (lightweight, no cached artifact). This looks like an oversight without documentation. **Fix:** add a "Stale Fallback" subsection under Shared Conventions in DESIGN.md explaining the pattern and which tools have it. | `DESIGN.md` |
