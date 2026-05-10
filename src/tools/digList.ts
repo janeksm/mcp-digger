@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { TOOL_ANNOTATIONS, extractErrorMessage } from "./shared.js";
+import { TOOL_ANNOTATIONS, extractErrorMessage, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
 import type { DiggerConfig } from "../config.js";
 import { debug, error } from "../logger.js";
 import { ensureAllReady, type RepoReadyResult } from "../repoManager.js";
@@ -25,13 +25,12 @@ export function registerDigList(
       description: DESCRIPTION,
       annotations: TOOL_ANNOTATIONS,
     },
-    async () => ({
-      content: [{ type: "text" as const, text: await digList(config) }],
-    }),
+    async () =>
+      toCallToolResult(await digList(config)),
   );
 }
 
-export async function digList(config: DiggerConfig): Promise<string> {
+export async function digList(config: DiggerConfig): Promise<ToolResult> {
   debug("digList", "called");
 
   let resolveWarning: string | undefined;
@@ -45,20 +44,26 @@ export async function digList(config: DiggerConfig): Promise<string> {
   }
 
   const sections: string[] = ["# Available Packages"];
+  let anyRepoResolved = false;
+  const failedRepos: string[] = [];
 
   for (const repo of config.repos) {
     const header = `## ${repo.name}`;
+    const repoResult = repoResults?.get(repo.name);
+    const repoResolved = repoResult !== undefined && !repoResult.error;
+
+    if (repoResolved) anyRepoResolved = true;
+    if (repoResult?.error) failedRepos.push(repo.name);
 
     if (repo.packages.length === 0) {
-      const repoError = repoResults?.get(repo.name)?.error;
-      const detail = repoError
-        ? `*No packages resolved.*\n\n> **Diagnostic:** ${repoError.split(/\r?\n/).join("\n> ")}`
+      const detail = repoResult?.error
+        ? `*No packages resolved.*\n\n> **Diagnostic:** ${repoResult.error.split(/\r?\n/).join("\n> ")}`
         : `*No packages resolved.*`;
       sections.push(`${header}\n\n${detail}`);
       continue;
     }
 
-    const sourcePath = repoResults?.get(repo.name)?.sourcePath;
+    const sourcePath = repoResult?.sourcePath;
     const summaries = sourcePath
       ? await Promise.all(
           repo.packages.map(async (pkg) => {
@@ -83,7 +88,14 @@ export async function digList(config: DiggerConfig): Promise<string> {
 
   if (resolveWarning) {
     sections.push(`---\n\n**Warning:** Some repos may not have resolved fully: ${resolveWarning}`);
+  } else if (failedRepos.length > 0) {
+    sections.push(`---\n\n**Warning:** Source access failed for: ${failedRepos.join(", ")}. Call dig_status for diagnostics.`);
   }
 
-  return sections.join("\n\n");
+  const text = sections.join("\n\n");
+
+  if (!anyRepoResolved && (resolveWarning || failedRepos.length > 0)) {
+    return toolError(text);
+  }
+  return toolSuccess(text);
 }
