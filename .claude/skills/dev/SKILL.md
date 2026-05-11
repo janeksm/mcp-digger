@@ -1,6 +1,6 @@
 ---
 name: dev
-description: Full TDD development cycle — plan, skeptic review, implement, verify, prompt accept
+description: Full TDD development cycle — plan, skeptic review, implement, verify, auto-accept
 argument-hint: <step-number or task-description>
 ---
 
@@ -76,8 +76,4 @@ Full TDD development cycle from planning through verified implementation. Reads/
 
 ### Phase 4 — Finalize
 
-10. **Prompt accept.** Tell the user:
-
-    > All checks pass. Run `/accept` to finalize.
-
-    Do NOT commit, do NOT mark the step `done` — `/accept` handles that.
+10. **Auto-accept.** If all three checks pass, invoke `/accept` automatically (pass the step number if this is a TODO step). Do NOT prompt the user — go straight to accept.

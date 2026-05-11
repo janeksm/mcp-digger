@@ -1764,6 +1764,79 @@ describe("extractIndex — brace counting skips strings/chars/comments", () => {
     const regex = /\/\*.*?\*\//gs;
     expect("/* start\nend */ : IReal".replace(regex, "")).toBe(" : IReal");
   });
+
+  it("clears pendingType after multi-line block comment", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Stale.cs": [
+        "namespace Lib;",
+        "public class Outer",
+        "{",
+        "    public record Stale(int X);",
+        "    /*",
+        "     * Documentation block",
+        "     */",
+        "    public void Method() {",
+        "    }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Stale")?.kind).toBe("record");
+    expect(entries.find((e) => e.symbol === "Method")?.parentType).toBe("Outer");
+  });
+
+  it("pendingType preserved across single-line block comment", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Allman.cs": [
+        "namespace Lib;",
+        "public class Allman",
+        "/* single-line block comment */",
+        "{",
+        "    public void Work() { }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Allman")?.kind).toBe("class");
+    expect(entries.find((e) => e.symbol === "Work")?.parentType).toBe("Allman");
+  });
+
+  it("pendingType consumed when brace on comment-closing line", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Combo.cs": [
+        "namespace Lib;",
+        "public class Combo /* multi-line",
+        "   comment */ {",
+        "    public void Inside() { }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Combo")?.kind).toBe("class");
+    expect(entries.find((e) => e.symbol === "Inside")?.parentType).toBe("Combo");
+  });
+
+  it("pendingType preserved across separate block comment before brace", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Separate.cs": [
+        "namespace Lib;",
+        "public class Separate",
+        "/*",
+        " * block comment between type and brace",
+        " */",
+        "{",
+        "    public void Work() { }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Separate")?.kind).toBe("class");
+    expect(entries.find((e) => e.symbol === "Work")?.parentType).toBe("Separate");
+  });
 });
 
 // ── Serialization with baseTypes ──

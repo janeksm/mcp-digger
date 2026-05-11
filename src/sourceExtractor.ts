@@ -645,7 +645,7 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
       if (opens > closes) {
         typeStack.push(name);
         typeDepths.push(depth + opens);
-      } else if (opens === 0) {
+      } else if (opens === 0 && !trimmed.includes(";")) {
         pendingType = name;
       }
     } else if (pendingType && opens > closes) {
