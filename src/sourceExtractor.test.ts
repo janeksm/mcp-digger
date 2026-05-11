@@ -1395,6 +1395,36 @@ describe("extractIndex — baseTypes", () => {
     const inline = entries.find((e) => e.symbol === "Inline");
     expect(inline?.baseTypes).toEqual(["IFoo"]);
   });
+
+  it("handles stray > in declaration without going negative on angle depth", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Stray.cs": "namespace Lib;\npublic class Stray> : IBase\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const stray = entries.find((e) => e.symbol === "Stray");
+    expect(stray?.baseTypes).toEqual(["IBase"]);
+  });
+
+  it("handles stray > in base type list without losing subsequent types", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Multi.cs": "namespace Lib;\npublic class Multi : IFoo>, IBar\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const multi = entries.find((e) => e.symbol === "Multi");
+    expect(multi?.baseTypes).toContain("IBar");
+  });
+
+  it("handles stray ) in declaration without going negative on paren depth", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Paren.cs": "namespace Lib;\npublic class Paren) : IFoo\n{\n}",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    const paren = entries.find((e) => e.symbol === "Paren");
+    expect(paren?.baseTypes).toEqual(["IFoo"]);
+  });
 });
 
 // ── extractIndex — generics and modifiers ──

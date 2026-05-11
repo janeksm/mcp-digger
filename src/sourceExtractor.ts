@@ -688,9 +688,9 @@ function parseBaseTypes(declarationText: string): string[] {
   for (let i = 0; i < text.length; i++) {
     const ch = text[i]!;
     if (ch === "<") angleDepth++;
-    else if (ch === ">") angleDepth--;
+    else if (ch === ">" && angleDepth > 0) angleDepth--;
     else if (ch === "(") parenDepth++;
-    else if (ch === ")") parenDepth--;
+    else if (ch === ")" && parenDepth > 0) parenDepth--;
     else if (ch === ":" && angleDepth === 0 && parenDepth === 0) {
       colonIdx = i;
       break;
@@ -717,7 +717,7 @@ function splitRespectingGenerics(text: string): string[] {
   let current = "";
   for (const ch of text) {
     if (ch === "<") depth++;
-    else if (ch === ">") depth--;
+    else if (ch === ">" && depth > 0) depth--;
     else if (ch === "," && depth === 0) {
       parts.push(current);
       current = "";
