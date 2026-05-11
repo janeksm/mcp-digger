@@ -535,11 +535,13 @@ async function digLookupReferencesAllPackages(
     try {
       const repoRefs = await withRepoLock(repo.name, async () => {
         const results: PackageReferences[] = [];
+        let localTotal = 0;
         for (const pkg of repo.packages) {
-          const remaining = MAX_REFERENCE_FILES - totalFiles;
+          const remaining = MAX_REFERENCE_FILES - totalFiles - localTotal;
           if (remaining <= 0) break;
           const refs = await searchReferences(ready.sourcePath, pkg, keyword, remaining);
           if (refs.length > 0) {
+            localTotal += refs.length;
             const totalOcc = refs.reduce((sum, r) => sum + r.count, 0);
             results.push({ packageName: pkg.name, refs, totalOccurrences: totalOcc });
           }

@@ -701,6 +701,28 @@ describe("references mode", () => {
     expect(result.text).toContain("Repo.cs");
   });
 
+  it("enforces file cap across packages within a single repo", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 30; i++) {
+      files[`src/PkgA/File${i}.cs`] = `namespace PkgA;\npublic class A${i} { public Target Get() => null; }`;
+      files[`src/PkgB/File${i}.cs`] = `namespace PkgB;\npublic class B${i} { public Target Get() => null; }`;
+    }
+    const repoDir = await initRepo(tmpDir, files);
+
+    const pkgA = makePkg("PkgA", "myrepo", "src", cacheDir);
+    const pkgB = makePkg("PkgB", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkgA, pkgB], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, undefined, "Target", "references");
+
+    expect(result.isError).toBe(false);
+    const fileMatches = result.text.match(/`File\d+\.cs`/g) ?? [];
+    expect(fileMatches.length).toBeLessThanOrEqual(50);
+    expect(result.text).toContain("capped");
+  });
+
   it("returns no-references message when keyword not found", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
