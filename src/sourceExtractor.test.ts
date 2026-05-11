@@ -474,6 +474,78 @@ describe("stripCsBody", () => {
     expect(result).toContain('@"say ""hello"" to {world}"');
     expect(result).toContain("public int X { get; set; }");
   });
+
+  it("ignores braces inside single-line raw string literal", () => {
+    const input = [
+      "public class Foo",
+      "{",
+      '    public const string Json = """{"name": "test"}""";',
+      "    public int X { get; set; }",
+      "}",
+    ].join("\n");
+
+    const result = stripCsBody(input);
+
+    expect(result).toContain('"""{"name": "test"}"""');
+    expect(result).toContain("public int X { get; set; }");
+  });
+
+  it("ignores braces inside multi-line raw string literal", () => {
+    const input = [
+      "public class Foo",
+      "{",
+      "    public void Do()",
+      "    {",
+      '        var json = """',
+      '            {',
+      '                "name": "test",',
+      '                "items": [{ "id": 1 }]',
+      "            }",
+      '            """;',
+      "    }",
+      "    public void Other()",
+      "    {",
+      "    }",
+      "}",
+    ].join("\n");
+
+    const result = stripCsBody(input);
+
+    expect(result).toContain("public void Do()");
+    expect(result).toContain("{ /* ... */ }");
+    expect(result).toContain("public void Other()");
+    const closingBraces = result.match(/^\s*\}$/gm);
+    expect(closingBraces?.length).toBe(1);
+  });
+
+  it("handles raw string with 4+ quote delimiters", () => {
+    const input = [
+      "public class Foo",
+      "{",
+      '    public const string S = """"contains """ inside"""";',
+      "    public int X { get; set; }",
+      "}",
+    ].join("\n");
+
+    const result = stripCsBody(input);
+
+    expect(result).toContain("public int X { get; set; }");
+  });
+
+  it("handles interpolated raw string $\"\"\"...\"\"\"", () => {
+    const input = [
+      "public class Foo",
+      "{",
+      '    public string Get(string name) { return $"""{name} has {count} items"""; }',
+      "    public int X { get; set; }",
+      "}",
+    ].join("\n");
+
+    const result = stripCsBody(input);
+
+    expect(result).toContain("public string Get(string name) { /* ... */ }");
+    expect(result).toContain("public int X { get; set; }");
+  });
 });
 
 // ── cleanSignatureOutput ──
@@ -1581,6 +1653,82 @@ describe("extractIndex — brace counting skips strings/chars/comments", () => {
     const entries = await extractIndex(repoDir, pkg);
     expect(entries.find((e) => e.symbol === "Get")?.parentType).toBe("Template");
     expect(entries.find((e) => e.symbol === "After")?.parentType).toBe("Template");
+  });
+
+  it("does not index declarations inside multi-line raw string literals", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Template.cs": [
+        "namespace Lib;",
+        "public class Template",
+        "{",
+        "    public string Get()",
+        "    {",
+        '        var sample = """',
+        "public class Fake",
+        "{",
+        "    public void Hidden() { }",
+        "}",
+        '""";',
+        "    }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Fake")).toBeUndefined();
+    expect(entries.find((e) => e.symbol === "Hidden")).toBeUndefined();
+    expect(entries.find((e) => e.symbol === "Template")?.kind).toBe("class");
+    expect(entries.find((e) => e.symbol === "Get")?.parentType).toBe("Template");
+  });
+
+  it("ignores braces inside multi-line raw string literals", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Template.cs": [
+        "namespace Lib;",
+        "public class Template",
+        "{",
+        "    public string Get()",
+        "    {",
+        '        var json = """',
+        "            {",
+        '                "key": "value"',
+        "            }",
+        '            """;',
+        "    }",
+        "    public void After()",
+        "    {",
+        "    }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Get")?.parentType).toBe("Template");
+    expect(entries.find((e) => e.symbol === "After")?.parentType).toBe("Template");
+  });
+
+  it("handles raw string with 4+ quote delimiters in index", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Raw.cs": [
+        "namespace Lib;",
+        "public class Raw",
+        "{",
+        "    public void Do()",
+        "    {",
+        '        var s = """"',
+        '            contains """ inside',
+        '            """";',
+        "    }",
+        "    public void After()",
+        "    {",
+        "    }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Do")?.parentType).toBe("Raw");
+    expect(entries.find((e) => e.symbol === "After")?.parentType).toBe("Raw");
   });
 
   it("ignores base type syntax inside inline block comments", async () => {

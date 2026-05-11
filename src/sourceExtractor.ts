@@ -352,6 +352,8 @@ export function stripCsBody(source: string): string {
   let depth = 0;
   let inBlockComment = false;
   let inVerbatim = false;
+  let inRawString = false;
+  let rawQuoteCount = 0;
   let skipToDepth = -1;
   let declContext = "";
 
@@ -359,9 +361,11 @@ export function stripCsBody(source: string): string {
     const trimmed = line.trim();
     const indent = line.substring(0, line.length - line.trimStart().length);
 
-    const analysis = analyzeLine(trimmed, inBlockComment, inVerbatim);
+    const analysis = analyzeLine(trimmed, inBlockComment, inVerbatim, inRawString, rawQuoteCount);
     inBlockComment = analysis.endsInComment;
     inVerbatim = analysis.endsInVerbatim;
+    inRawString = analysis.endsInRawString;
+    rawQuoteCount = analysis.rawQuoteCount;
 
     if (skipToDepth >= 0) {
       depth += analysis.opens - analysis.closes;
@@ -427,12 +431,16 @@ interface LineAnalysis {
   firstOpenIdx: number;
   endsInComment: boolean;
   endsInVerbatim: boolean;
+  endsInRawString: boolean;
+  rawQuoteCount: number;
 }
 
 function analyzeLine(
   line: string,
   startsInBlockComment: boolean,
   startsInVerbatim = false,
+  startsInRawString = false,
+  rawQuoteCount = 0,
 ): LineAnalysis {
   let opens = 0;
   let closes = 0;
@@ -440,6 +448,8 @@ function analyzeLine(
   let inBC = startsInBlockComment;
   let inStr = false;
   let inVerbatim = startsInVerbatim;
+  let inRawString = startsInRawString;
+  let currentRawQuoteCount = rawQuoteCount;
   let inChar = false;
 
   for (let i = 0; i < line.length; i++) {
@@ -450,6 +460,19 @@ function analyzeLine(
       if (ch === "*" && next === "/") {
         inBC = false;
         i++;
+      }
+      continue;
+    }
+    if (inRawString) {
+      if (ch === '"') {
+        let count = 1;
+        while (i + count < line.length && line[i + count] === '"') count++;
+        if (count >= currentRawQuoteCount) {
+          inRawString = false;
+          i += currentRawQuoteCount - 1;
+        } else {
+          i += count - 1;
+        }
       }
       continue;
     }
@@ -486,7 +509,19 @@ function analyzeLine(
     if (ch === '"') {
       const prev = i > 0 ? line[i - 1] : "";
       const prevPrev = i > 1 ? line[i - 2] : "";
-      if (prev === "@" || (prev === "$" && prevPrev === "@")) {
+      const isVerbatimPrefix = prev === "@" || (prev === "$" && prevPrev === "@");
+
+      let quoteCount = 1;
+      while (i + quoteCount < line.length && line[i + quoteCount] === '"') quoteCount++;
+
+      if (quoteCount >= 3 && !isVerbatimPrefix) {
+        inRawString = true;
+        currentRawQuoteCount = quoteCount;
+        i += quoteCount - 1;
+        continue;
+      }
+
+      if (isVerbatimPrefix) {
         inVerbatim = true;
       } else {
         inStr = true;
@@ -506,7 +541,13 @@ function analyzeLine(
     }
   }
 
-  return { opens, closes, firstOpenIdx, endsInComment: inBC, endsInVerbatim: inVerbatim };
+  return {
+    opens, closes, firstOpenIdx,
+    endsInComment: inBC,
+    endsInVerbatim: inVerbatim,
+    endsInRawString: inRawString,
+    rawQuoteCount: inRawString ? currentRawQuoteCount : 0,
+  };
 }
 
 function isTypeDecl(context: string): boolean {
@@ -544,19 +585,25 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
   let pendingType: string | null = null;
   let inBlockComment = false;
   let inVerbatim = false;
+  let inRawString = false;
+  let rawQuoteCount = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i]!.trim();
-    if (!trimmed && !inBlockComment && !inVerbatim) continue;
+    if (!trimmed && !inBlockComment && !inVerbatim && !inRawString) continue;
 
     const wasInVerbatim = inVerbatim;
-    const analysis = analyzeLine(trimmed, inBlockComment, inVerbatim);
+    const wasInRawString = inRawString;
+    const analysis = analyzeLine(trimmed, inBlockComment, inVerbatim, inRawString, rawQuoteCount);
     const wasInBlockComment = inBlockComment;
     inBlockComment = analysis.endsInComment;
     inVerbatim = analysis.endsInVerbatim;
+    inRawString = analysis.endsInRawString;
+    rawQuoteCount = analysis.rawQuoteCount;
 
     if (isNonCodeLine(trimmed, wasInBlockComment, analysis.endsInComment)) continue;
     if (wasInVerbatim) continue;
+    if (wasInRawString) continue;
 
     const opens = analysis.opens;
     const closes = analysis.closes;
