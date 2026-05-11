@@ -1,43 +1,108 @@
 ---
 name: accept
-description: Accept and finalize the current implementation step — commits changes locally and marks the step done in TODO.md
-disable-model-invocation: true
-allowed-tools: Bash(git *) Read Edit
+description: Accept and finalize — simplify then codex review, dedup, fix all issues, commit, mark done
+allowed-tools: Bash PowerShell Read Write Edit Glob Grep AskUserQuestion
 argument-hint: [step-number]
 ---
 
 # Accept Step
 
-Finalize the current implementation step by committing and updating TODO.md.
+Finalize the current implementation step with quality gates before committing. Updates [CMCM](../../CAVEMAN_CM.md) knowledge files (patterns, handoff).
 
 **Step to accept:** $ARGUMENTS (if empty, infer from TODO.md — the first step with status `in-progress`)
 
 ## Instructions
 
-1. **Identify the step.** Read `TODO.md` to find the step:
-   - If `$ARGUMENTS` is a number, use that step.
-   - Otherwise find the first `in-progress` step.
-   - If no `in-progress` step exists, **create a new step**: inspect `git diff HEAD` and `git status` to summarize the changes, pick the next step number, and add a new row to the TODO table with status `in-progress`. Use the primary module or feature name as the Module column.
+### 1. Identify the step
 
-2. **Run /simplify.** Invoke the `/simplify` skill to review and clean up the code before committing.
+Read `TODO.md` to find the step:
+- If `$ARGUMENTS` is a number, use that step.
+- Otherwise find the first `in-progress` step.
+- If no `in-progress` step exists, inspect `git diff HEAD` and `git status` to summarize changes, pick the next step number, and add a new row with status `in-progress`.
 
-3. **Pause for user review.** After /simplify completes, show a summary of what will be committed and ask the user to confirm before proceeding. Do NOT commit automatically.
+### 2. Simplify (analyze + fix)
 
-4. **After user confirms — commit.** Follow the standard git commit flow:
-   - `git status` and `git diff` to review changes
-   - `git add` the relevant source and test files (not TODO.md yet)
-   - Commit message: use the Notes column text from the TODO.md step as the commit message subject line, prefixed with the conventional commit type and step number — e.g. `feat: dig_status MCP tool, lsRemote() connectivity check (step 15)`. Keep it short — one line, no body paragraph.
-   - Include `Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>`
+Review changed files and apply simplification fixes:
+- Run `git diff HEAD` to identify changed files and hunks.
+- For each changed area, check for: deep nesting (use guard clauses), long functions (split), generic names (make descriptive), dead code (remove), redundant abstractions (inline), unnecessary comments (delete).
+- Apply fixes incrementally — one at a time.
+- After all simplify fixes, verify: run `npm run typecheck`, `npm run lint`, `npm test` (as separate commands).
+- If verification fails, fix the failure before continuing.
+- Record what was fixed for the summary in step 5.
 
-5. **Mark step complete in TODO.md.**
-   - Change the step's status from `in-progress` to `done`
-   - Add the commit hash (short) to the step's entry
-   - **Reorder rows** so all `done` steps appear first (sorted by step number), followed by any not-finished steps (`—`, `in-progress`, `blocked`) at the bottom
+### 3. Codex review (on post-simplify code)
 
-6. **Update DESIGN.md.** If the committed changes affect the MCP server design (new/changed/removed tools, transport, annotations, input schemas, tool descriptions, interaction patterns, or shared conventions), update `DESIGN.md` to reflect the current state. Keep the existing structure and only change what's relevant. Skip this step if the changes are purely internal (bug fixes, refactors, tests) with no impact on the MCP tool surface.
+Remove any previous `CODEX_REVIEW.md`. Then launch Codex CLI in background (Bash with `run_in_background: true`):
 
-7. **Amend commit with doc updates.** Stage the doc files and amend: `git add TODO.md DESIGN.md && git commit --amend --no-edit`
+```
+codex exec -s read-only -o CODEX_REVIEW.md "You are a senior code reviewer. Review the recent changes (unstaged and staged diffs) in this codebase.
 
-8. **Report.** Show the final commit hash and the updated TODO.md status.
+For each finding report:
+- Severity: CRITICAL, HIGH, MEDIUM, or LOW
+- File path and line number
+- What the issue is
+- Suggested fix (code snippet if applicable)
 
-9. **Compact context.** After reporting, compact the conversation to free up context space. Derive a short title (3–5 keywords) from the step's Notes column and use it as the compact summary — e.g. for notes "dig_status MCP tool, lsRemote() connectivity check" → `/compact dig_status tool lsRemote connectivity`. Tell the user to run the command: `/compact <keywords>`.
+Group by severity (CRITICAL first). Format as markdown checklist with - [ ] items." < /dev/null
+```
+
+Wait for the background task notification. Read `CODEX_REVIEW.md`. Delete `CODEX_REVIEW.md`.
+
+### 4. Fix Codex findings
+
+Apply every Codex fix, CRITICAL to LOW:
+- Skip any finding that duplicates a simplify fix already applied (same file + within 5 lines).
+- Work incrementally — one fix at a time.
+- After all fixes, verify: run `npm run typecheck`, `npm run lint`, `npm test` (as separate commands).
+- If verification fails, fix the failure before continuing.
+
+### 5. Pause for user review
+
+Show summary:
+- Findings fixed: count by source (`[codex]`, `[simplify]`, `[codex+simplify]`)
+- Files changed
+- Verification result (pass/fail for each check)
+
+Ask the user to confirm before committing. Do NOT commit automatically.
+
+### 6. Update docs before commit
+
+**Mark step complete in TODO.md:**
+- Change status from `in-progress` to `done`
+- Add short commit hash (use placeholder, will update after commit)
+- Reorder: `done` steps first (by step number), then unfinished
+
+**Update DESIGN.md** if changes affect MCP server design (tools, transport, annotations, schemas, descriptions, patterns, conventions). Skip for internal changes (bug fixes, refactors, tests).
+
+**Update PATTERNS.md (CMCM)** if the implementation introduced a reusable pattern not yet documented. A pattern qualifies if it: (a) is used in 2+ places or will clearly be reused, (b) has a non-obvious shape, and (c) is specific to this codebase. If so, append:
+
+```
+## pattern-name
+When: trigger condition
+Shape: how it works
+Examples: file list
+```
+
+Skip if no new pattern — most steps will not add one.
+
+### 7. Commit
+
+After user confirms:
+- `git add .`
+- Commit message: Notes column from TODO.md prefixed with conventional type and step — e.g. `feat: dig_status MCP tool, lsRemote() connectivity check (step 15)`. One line, no body.
+- Include `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`
+- Update the commit hash in TODO.md if needed, then `git add TODO.md` and `git commit --amend --no-edit`
+
+### 8. Write handoff and report (CMCM)
+
+Write `HANDOFF.md` with completed state:
+
+```
+## Session YYYY-MM-DD
+**Working on:** <completed task description>
+**State:** completed
+**Uncommitted:** None
+**Next:** <next unfinished step from TODO.md, or "No remaining steps">
+```
+
+Show final commit hash and updated TODO.md status. Then tell the user to run `/clear` to start a fresh session.

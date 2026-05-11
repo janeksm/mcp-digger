@@ -9,3 +9,4 @@ dist/
 .claude/settings.local.json
 .mcp.json
 .playwright-mcp/
+HANDOFF.md

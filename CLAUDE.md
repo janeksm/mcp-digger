@@ -63,12 +63,14 @@ src/
 
 ## Key Patterns
 
-- **Config is the single source of truth.** `loadConfig()` resolves the config file, `.env` values, and per-repo auth. Modules receive resolved config — they never read env vars directly.
-- **Git auth is per-repo.** Each repo has its own `auth` block with strategy (auto/pat/none) and either inline `PAT` or `PAT-EnvVarName` (env var indirection for secrets). PAT is injected into HTTPS URLs at call time, never persisted to git remote config. `gitClient.ts` never logs credentials.
-- **Two repo modes:** Mode A = managed shallow clone in `.digger/source/`. Mode B = developer's local repo (read-only, never fetched), configured via top-level `localRepos` object. Fallback from B→A with warning if local path invalid.
-- **Cache invalidation:** single commit hash per repo in `meta.json`. All packages in a repo share freshness state. Stale → regenerate all, then `markFresh`.
-- **Tools never throw.** Always return a usable text response, even on errors (stale cache fallback, unavailable messages, valid path listings).
-- **Logger singleton:** `debug(tag, ...args)` — buffers before `initLogger()`, writes to `.digger/debug.log` after. Enabled via `"debug": true` in config.
+See [PATTERNS.md](PATTERNS.md) — single source of truth for all codebase patterns (part of CMCM).
+
+## Cave Man Claude Memory (CMCM)
+
+Cross-session memory via markdown files. Skills read/write them automatically.
+See [CAVEMAN_CM.md](CAVEMAN_CM.md) for full system docs, data flow, and rules.
+
+Files: `DECISIONS.md` (decision log) · `PATTERNS.md` (code shapes) · `HANDOFF.md` (session state, .gitignored)
 
 ## Config & Env Vars
 
