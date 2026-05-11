@@ -1744,6 +1744,26 @@ describe("extractIndex — brace counting skips strings/chars/comments", () => {
     const entries = await extractIndex(repoDir, pkg);
     expect(entries.find((e) => e.symbol === "Real")?.baseTypes).toEqual(["IReal"]);
   });
+
+  it("strips block comment spanning forward-looking lines before parsing base types", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Span.cs": [
+        "namespace Lib;",
+        "public class Span /* start",
+        "  end */ : IReal",
+        "{",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Span")?.baseTypes).toEqual(["IReal"]);
+  });
+
+  it("comment-stripping regex handles newlines (defensive for future join changes)", () => {
+    const regex = /\/\*.*?\*\//gs;
+    expect("/* start\nend */ : IReal".replace(regex, "")).toBe(" : IReal");
+  });
 });
 
 // ── Serialization with baseTypes ──

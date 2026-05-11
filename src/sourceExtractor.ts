@@ -635,7 +635,7 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
       const beforeKeyword = trimmed.slice(0, typeMatch.index + typeMatch[0].indexOf(typeKind));
       const modifiers = extractModifiers(beforeKeyword);
 
-      const baseTypes = parseBaseTypes(fullDecl.replace(/\/\*.*?\*\//g, ""));
+      const baseTypes = parseBaseTypes(fullDecl.replace(/\/\*.*?\*\//gs, ""));
       const entry: IndexEntry = { symbol: name, kind: typeKind, filePath: relPath };
       if (baseTypes.length > 0) entry.baseTypes = baseTypes;
       if (generics) entry.generics = generics;
