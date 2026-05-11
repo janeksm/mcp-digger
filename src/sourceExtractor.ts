@@ -351,6 +351,7 @@ export function stripCsBody(source: string): string {
 
   let depth = 0;
   let inBlockComment = false;
+  let inVerbatim = false;
   let skipToDepth = -1;
   let declContext = "";
 
@@ -358,8 +359,9 @@ export function stripCsBody(source: string): string {
     const trimmed = line.trim();
     const indent = line.substring(0, line.length - line.trimStart().length);
 
-    const analysis = analyzeLine(trimmed, inBlockComment);
+    const analysis = analyzeLine(trimmed, inBlockComment, inVerbatim);
     inBlockComment = analysis.endsInComment;
+    inVerbatim = analysis.endsInVerbatim;
 
     if (skipToDepth >= 0) {
       depth += analysis.opens - analysis.closes;
@@ -424,17 +426,20 @@ interface LineAnalysis {
   closes: number;
   firstOpenIdx: number;
   endsInComment: boolean;
+  endsInVerbatim: boolean;
 }
 
 function analyzeLine(
   line: string,
   startsInBlockComment: boolean,
+  startsInVerbatim = false,
 ): LineAnalysis {
   let opens = 0;
   let closes = 0;
   let firstOpenIdx = -1;
   let inBC = startsInBlockComment;
   let inStr = false;
+  let inVerbatim = startsInVerbatim;
   let inChar = false;
 
   for (let i = 0; i < line.length; i++) {
@@ -445,6 +450,13 @@ function analyzeLine(
       if (ch === "*" && next === "/") {
         inBC = false;
         i++;
+      }
+      continue;
+    }
+    if (inVerbatim) {
+      if (ch === '"') {
+        if (next === '"') { i++; continue; }
+        inVerbatim = false;
       }
       continue;
     }
@@ -472,7 +484,13 @@ function analyzeLine(
       continue;
     }
     if (ch === '"') {
-      inStr = true;
+      const prev = i > 0 ? line[i - 1] : "";
+      const prevPrev = i > 1 ? line[i - 2] : "";
+      if (prev === "@" || (prev === "$" && prevPrev === "@")) {
+        inVerbatim = true;
+      } else {
+        inStr = true;
+      }
       continue;
     }
     if (ch === "'") {
@@ -488,7 +506,7 @@ function analyzeLine(
     }
   }
 
-  return { opens, closes, firstOpenIdx, endsInComment: inBC };
+  return { opens, closes, firstOpenIdx, endsInComment: inBC, endsInVerbatim: inVerbatim };
 }
 
 function isTypeDecl(context: string): boolean {
@@ -525,16 +543,20 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
   const typeDepths: number[] = [];
   let pendingType: string | null = null;
   let inBlockComment = false;
+  let inVerbatim = false;
 
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i]!.trim();
-    if (!trimmed && !inBlockComment) continue;
+    if (!trimmed && !inBlockComment && !inVerbatim) continue;
 
-    const analysis = analyzeLine(trimmed, inBlockComment);
+    const wasInVerbatim = inVerbatim;
+    const analysis = analyzeLine(trimmed, inBlockComment, inVerbatim);
     const wasInBlockComment = inBlockComment;
     inBlockComment = analysis.endsInComment;
+    inVerbatim = analysis.endsInVerbatim;
 
     if (isNonCodeLine(trimmed, wasInBlockComment, analysis.endsInComment)) continue;
+    if (wasInVerbatim) continue;
 
     const opens = analysis.opens;
     const closes = analysis.closes;
@@ -547,11 +569,13 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
       let fullDecl = trimmed.slice(typeMatch.index + typeMatch[0].length);
       if (opens === 0 && !trimmed.includes(";")) {
         let fwdInBC = analysis.endsInComment;
+        let fwdInVerbatim = analysis.endsInVerbatim;
         for (let j = i + 1; j < lines.length && j <= i + 5; j++) {
           const next = lines[j]!.trim();
-          const fwdAnalysis = analyzeLine(next, fwdInBC);
+          const fwdAnalysis = analyzeLine(next, fwdInBC, fwdInVerbatim);
           const wasFwdInBC = fwdInBC;
           fwdInBC = fwdAnalysis.endsInComment;
+          fwdInVerbatim = fwdAnalysis.endsInVerbatim;
           if (isNonCodeLine(next, wasFwdInBC, fwdAnalysis.endsInComment)) continue;
           fullDecl += " " + next;
           if (fwdAnalysis.opens > 0 || next.includes(";")) break;

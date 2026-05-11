@@ -403,6 +403,77 @@ describe("stripCsBody", () => {
     expect(result).toContain("multi-line comment { with braces } */");
     expect(result).toContain("public int X { get; set; }");
   });
+
+  it("handles verbatim string with backslash (not an escape)", () => {
+    const input = [
+      "public class Foo",
+      "{",
+      '    public const string Path = @"C:\\Users\\test\\";',
+      "    public int X { get; set; }",
+      "}",
+    ].join("\n");
+
+    const result = stripCsBody(input);
+
+    expect(result).toContain('@"C:\\Users\\test\\"');
+    expect(result).toContain("public int X { get; set; }");
+  });
+
+  it("handles multi-line verbatim string with braces", () => {
+    const input = [
+      "public class Foo",
+      "{",
+      "    public void Do()",
+      "    {",
+      '        var json = @"{',
+      '            ""name"": ""test"",',
+      '            ""items"": [{ ""id"": 1 }]',
+      '        }";',
+      "    }",
+      "    public void Other()",
+      "    {",
+      "    }",
+      "}",
+    ].join("\n");
+
+    const result = stripCsBody(input);
+
+    expect(result).toContain("public void Do()");
+    expect(result).toContain("{ /* ... */ }");
+    expect(result).toContain("public void Other()");
+    const closingBraces = result.match(/^\s*\}$/gm);
+    expect(closingBraces?.length).toBe(1);
+  });
+
+  it("handles interpolated verbatim string $@\"...\"", () => {
+    const input = [
+      "public class Foo",
+      "{",
+      '    public string Get(string name) { return $@"Hello {name}, path=C:\\Users\\"; }',
+      "    public int X { get; set; }",
+      "}",
+    ].join("\n");
+
+    const result = stripCsBody(input);
+
+    expect(result).toContain("public string Get(string name) { /* ... */ }");
+    expect(result).toContain("public int X { get; set; }");
+  });
+
+  it("handles verbatim string with escaped quotes (\"\")", () => {
+    const input = [
+      "public class Foo",
+      "{",
+      '    public const string S = @"say ""hello"" to {world}";',
+      "    public int X { get; set; }",
+      "}",
+    ].join("\n");
+
+    const result = stripCsBody(input);
+
+    expect(result).toContain('@"say ""hello"" to {world}"');
+    expect(result).toContain("public int X { get; set; }");
+  });
 });
 
 // ── cleanSignatureOutput ──
@@ -1460,6 +1531,56 @@ describe("extractIndex — brace counting skips strings/chars/comments", () => {
     expect(entries.find((e) => e.symbol === "Hidden")).toBeUndefined();
     expect(entries.find((e) => e.symbol === "Real")?.kind).toBe("class");
     expect(entries.find((e) => e.symbol === "Visible")?.parentType).toBe("Real");
+  });
+
+  it("does not index declarations inside multi-line verbatim strings", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Template.cs": [
+        "namespace Lib;",
+        "public class Template",
+        "{",
+        "    public string Get()",
+        "    {",
+        '        var sample = @"',
+        "public class Fake",
+        "{",
+        "    public void Hidden() { }",
+        "}",
+        '";',
+        "    }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Fake")).toBeUndefined();
+    expect(entries.find((e) => e.symbol === "Hidden")).toBeUndefined();
+    expect(entries.find((e) => e.symbol === "Template")?.kind).toBe("class");
+    expect(entries.find((e) => e.symbol === "Get")?.parentType).toBe("Template");
+  });
+
+  it("ignores braces inside multi-line verbatim strings", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Template.cs": [
+        "namespace Lib;",
+        "public class Template",
+        "{",
+        "    public string Get()",
+        "    {",
+        '        var json = @"{',
+        '            ""key"": ""value""',
+        '        }";',
+        "    }",
+        "    public void After()",
+        "    {",
+        "    }",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Get")?.parentType).toBe("Template");
+    expect(entries.find((e) => e.symbol === "After")?.parentType).toBe("Template");
   });
 
   it("ignores base type syntax inside inline block comments", async () => {
