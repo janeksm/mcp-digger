@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -2017,6 +2018,15 @@ describe("countReferences", () => {
     const source = "IFoo foo; ifoo bar; IFOO baz;";
     expect(countReferences(source, "IFoo")).toBe(1);
   });
+
+  it("returns zero for empty source", () => {
+    expect(countReferences("", "IFoo")).toBe(0);
+  });
+
+  it("escapes regex special characters in keyword", () => {
+    const source = "System.String x; System.String y; SystemXString z;";
+    expect(countReferences(source, "System.String")).toBe(2);
+  });
 });
 
 // ── searchReferences ──
@@ -2049,5 +2059,52 @@ describe("searchReferences", () => {
     const refs = await searchReferences(repoDir, pkg, "ITarget", 3);
 
     expect(refs.length).toBe(3);
+  });
+
+  it("reports occurrence count per file and sorts descending", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Heavy.cs": "IFoo a; IFoo b; IFoo c;",
+      "src/Lib/Light.cs": "IFoo x;",
+      "src/Lib/Medium.cs": "IFoo m; IFoo n;",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+
+    const refs = await searchReferences(repoDir, pkg, "IFoo");
+
+    expect(refs).toEqual([
+      { filePath: "Heavy.cs", count: 3 },
+      { filePath: "Medium.cs", count: 2 },
+      { filePath: "Light.cs", count: 1 },
+    ]);
+  });
+
+  it("skips files that fail to read", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Good.cs": "IFoo x;",
+      "src/Lib/Broken.cs": "IFoo y;",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+
+    const blobHash = execFileSync("git", ["-C", repoDir, "rev-parse", "HEAD:src/Lib/Broken.cs"], { encoding: "utf8" }).trim();
+    const objPath = path.join(repoDir, ".git", "objects", blobHash.slice(0, 2), blobHash.slice(2));
+    fs.unlinkSync(objPath);
+
+    const refs = await searchReferences(repoDir, pkg, "IFoo");
+
+    expect(refs).toEqual([{ filePath: "Good.cs", count: 1 }]);
+  });
+
+  it("excludes generated files", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Real.cs": "IFoo x;",
+      "src/Lib/Auto.g.cs": "IFoo y;",
+      "src/Lib/Auto.generated.cs": "IFoo z;",
+      "src/Lib/Form.Designer.cs": "IFoo w;",
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+
+    const refs = await searchReferences(repoDir, pkg, "IFoo");
+
+    expect(refs).toEqual([{ filePath: "Real.cs", count: 1 }]);
   });
 });
