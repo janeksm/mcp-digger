@@ -980,6 +980,14 @@ describe("loadConfig — packageFilter", () => {
     );
   });
 
+  it("rejects repo name with trailing '.'", () => {
+    const config: ConfigFile = {
+      repos: [{ name: "BSF.", url: "https://g.com/x.git" }],
+    };
+    const { env, cwd } = setupConfig(config);
+    expect(() => loadConfig(env, cwd)).toThrow(/must not end with '\.'/);
+  });
+
   it("rejects packageFilter without trailing '*'", () => {
     const config: ConfigFile = {
       repos: [{ name: "Libs", url: "https://g.com/x.git", packageFilter: "MyCompany." }],

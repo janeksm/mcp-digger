@@ -448,6 +448,10 @@ export function loadConfig(
       );
       continue;
     }
+    if (name.endsWith(".")) {
+      errors.push(`Repo '${name}': name must not end with '.'.`);
+      continue;
+    }
     if (!isValidPackageName(name)) {
       errors.push(
         `Repo '${name}': name contains invalid characters. ${SAFE_NAME_HINT}`,

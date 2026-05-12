@@ -184,17 +184,19 @@ export async function readIndex(
 
 // ── Internal ──
 
-function safeRepoSlug(repoName: string): string {
-  return repoName.replace(/\*+$/, "").replace(/\.+$/, "");
-}
-
 function metaFilePath(cacheDir: string, repoName: string): string {
-  return path.join(cacheDir, "meta", `${safeRepoSlug(repoName)}.json`);
+  if (/[*.]$/.test(repoName)) {
+    throw new Error(
+      `Invalid repo name '${repoName}': trailing '*' or '.' should have been rejected by config validation`,
+    );
+  }
+  return path.join(cacheDir, "meta", `${repoName}.json`);
 }
 
 async function readMeta(cacheDir: string, repoName: string): Promise<RepoMeta | undefined> {
+  const metaPath = metaFilePath(cacheDir, repoName);
   try {
-    const raw = await fs.promises.readFile(metaFilePath(cacheDir, repoName), "utf-8");
+    const raw = await fs.promises.readFile(metaPath, "utf-8");
     const parsed = JSON.parse(raw) as RepoMeta;
     if (typeof parsed.commitHash === "string") {
       return { commitHash: parsed.commitHash, updatedAt: parsed.updatedAt ?? "" };

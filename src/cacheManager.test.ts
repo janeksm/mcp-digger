@@ -74,15 +74,16 @@ describe("isFresh / markFresh", () => {
     expect(await isFresh(cacheDir, "repo-a", "hash-b")).toBe(false);
   });
 
-  it("safeRepoSlug strips trailing wildcards for defense-in-depth", async () => {
-    await markFresh(cacheDir, "BSF.*", "abc123");
-
-    expect(await isFresh(cacheDir, "BSF.*", "abc123")).toBe(true);
-    expect(await isFresh(cacheDir, "BSF.*", "other")).toBe(false);
-
-    const metaDir = path.join(cacheDir, "meta");
-    const files = fs.readdirSync(metaDir);
-    expect(files).toEqual(["BSF.json"]);
+  it("rejects repo names with trailing * or . characters", async () => {
+    await expect(markFresh(cacheDir, "BSF.*", "abc123")).rejects.toThrow(
+      /trailing '\*' or '\.'/,
+    );
+    await expect(isFresh(cacheDir, "BSF.*", "abc123")).rejects.toThrow(
+      /trailing '\*' or '\.'/,
+    );
+    await expect(markFresh(cacheDir, "BSF.", "abc123")).rejects.toThrow(
+      /trailing '\*' or '\.'/,
+    );
   });
 
   it("returns false for corrupted meta file", async () => {
