@@ -28,6 +28,24 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
+// ── Unconfigured mode ──
+
+describe("unconfigured mode", () => {
+  it("returns not-configured message when config is null", async () => {
+    const result = await digStatus(null);
+
+    expect(result).toContain("unconfigured mode");
+    expect(result).toContain("no `.digger/config.json` found");
+  });
+
+  it("includes setup instructions mentioning dig_init", async () => {
+    const result = await digStatus(null);
+
+    expect(result).toContain("dig_init");
+    expect(result).toContain(".digger/config.json");
+  });
+});
+
 // ── Config summary ──
 
 describe("config summary", () => {

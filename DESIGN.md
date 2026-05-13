@@ -108,6 +108,18 @@
 
 **Output:** Markdown summary with per-repo details: mode (local/managed), package count, old → new commit hash, and cache-cleared confirmation. Per-repo errors are captured in the summary (not thrown). Subsequent tool calls rebuild indexes lazily.
 
+### `dig_init` — Bootstrap: Config Creation
+
+| Field | Value |
+|-------|-------|
+| File | `src/tools/digInit.ts` |
+| Input | *(none)* |
+| Annotations | `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
+
+**Purpose:** Creates a starter `.digger/config.json` with a sample template. Only registered when the server starts in unconfigured mode (no config file found). After running, the user edits the template and restarts the MCP server to activate all tools. Uses atomic file creation (`wx` flag) to avoid overwriting an existing config.
+
+**Output:** Success message with the config file path and instructions to edit and restart. Returns error if config already exists or if file creation fails.
+
 ### `dig_file` — Level 3: Full Source
 
 | Field | Value |
@@ -132,6 +144,9 @@ dig_status  →  dig_list  →  dig_repo_overview(repo)    →  dig_package_over
 
 dig_refresh(repo?)  ← force cache invalidation, suggested by "no matches" messages
 (operational)
+
+dig_init            ← only registered when no config exists (unconfigured mode)
+(bootstrap)
 ```
 
 Each tool's description guides Claude on when to escalate to the next level. Tool descriptions include comparative cost hints so the agent can choose the cheapest tool that answers its question: `dig_lookup` (fast indexed symbol/implements lookup; references mode scans source) → `dig_signatures` (stripped API surface) → `dig_file` (full source).
@@ -145,5 +160,6 @@ Each tool's description guides Claude on when to escalate to the next level. Too
 - **Cache-aware.** Overview and lookup tools use commit-hash-based cache invalidation. File tool reads directly from git.
 - **Stale fallback.** When a repo becomes unreachable, three tools gracefully degrade by returning stale cached content with a warning disclaimer: `dig_package_overview` falls back to stale `overview.md`, `dig_lookup` (symbol/implements modes) falls back to stale `index.dat`, and `dig_signatures` falls back to stale `index.dat` + per-file signature cache under `signatures/`. The remaining tools have no fallback by design: `dig_lookup` references mode reads source files directly (no cached artifact to fall back to), `dig_repo_overview` and `dig_package_files` perform lightweight git reads with no pre-computed cache, `dig_file` reads source on demand, and the operational/discovery tools (`dig_list`, `dig_status`, `dig_refresh`) don't extract package content. The fallback pattern is: attempt fresh extraction → on failure, read stale cache artifact → if results exist, return them with a stale-content warning → otherwise return error.
 - **Sequential repo processing.** Tools process repos sequentially to avoid concurrent git operations competing for network/disk.
+- **Unconfigured mode.** When no config file is found (`loadConfig()` returns `null`), the server starts with only `dig_status` and `dig_init` registered. No `.digger/` directory is created, no logger is initialized, and no connections are attempted. `dig_status` reports the unconfigured state with setup instructions. `dig_init` creates a starter config at the resolved config path (respects `DIGGER_CONFIG` env var).
 - **Package filtering.** A `packageFilter` field on a repo (e.g. `"packageFilter": "BSF.*"`) narrows the exposed package list to the intersection of (workspace-referenced packages matching the filter prefix ∩ on-disk `.csproj` directories). The repo `name` is a plain identifier (e.g. `"BSF.NuGet"`); `packages` (explicit list) and `packageFilter` are mutually exclusive. References are collected by a recursive workspace scan over `.sln`, `.slnx`, `Directory.Packages.props`, `Directory.Build.props`, and `Directory.Build.targets` files, skipping `.git`/`.digger`/`node_modules`/`bin`/`obj`/`.vs`/`.idea`/`packages`. The scan runs once per `ensureAllReady()` call and writes its full result to `<cacheDir>/solution-scan.json`. When a filtered repo resolves to zero packages, the per-repo `error` is surfaced by each tool with a recommendation to switch to an explicit `packages` list.
 - **Branch tracking.** An optional `branch` field on a repo (e.g. `"branch": "develop"`) controls which git branch is cloned and fetched for managed repos. When set, `clone` uses `-b <branch>` and `fetch` fetches the named branch ref instead of `HEAD`. When omitted, the repo's default branch is used. Only meaningful for managed clones (Mode A) — for local repos (Mode B), the user controls the branch themselves. Branch names are validated (no `..`, no leading `-`, no `//`, safe charset).

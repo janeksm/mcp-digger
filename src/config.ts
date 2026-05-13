@@ -109,7 +109,7 @@ export class ConfigError extends Error {
 
 // ── Defaults ──
 
-const DEFAULT_CONFIG_PATH = ".digger/config.json";
+export const DEFAULT_CONFIG_PATH = ".digger/config.json";
 const DEFAULT_MANAGED_SOURCE_DIR = ".digger/source";
 const DEFAULT_CACHE_DIR = ".digger/cache";
 const DEFAULT_SOURCE_ROOT = "src";
@@ -344,11 +344,12 @@ function resolveRepoAuth(
  * and is populated later by {@link discoverPackages} after the repo is on disk.
  *
  * Throws {@link ConfigError} aggregating every validation problem found.
+ * Returns `null` when the config file is absent (ENOENT).
  */
 export function loadConfig(
   rawEnv: NodeJS.ProcessEnv = process.env,
   cwd: string = process.cwd(),
-): DiggerConfig {
+): DiggerConfig | null {
   const env = mergeEnvFile(rawEnv, cwd);
 
   const errors: string[] = [];
@@ -366,7 +367,7 @@ export function loadConfig(
   } catch (e) {
     const err = e as NodeJS.ErrnoException;
     if (err.code === "ENOENT") {
-      throw new ConfigError([`Config file not found: ${configPath}`]);
+      return null;
     }
     throw new ConfigError([
       `Failed to parse config file ${configPath}: ${err.message}`,

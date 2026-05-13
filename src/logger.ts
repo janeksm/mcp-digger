@@ -88,12 +88,10 @@ export function error(tag: string, ...args: unknown[]): void {
     }
     return;
   }
-  const fallbackPath = path.join(process.cwd(), ".digger", "error.log");
   try {
-    fs.mkdirSync(path.dirname(fallbackPath), { recursive: true });
-    fs.appendFileSync(fallbackPath, line);
+    process.stderr.write(line);
   } catch {
-    // Best-effort — if even this fails, stderr is all we have
+    // Best-effort
   }
 }
 

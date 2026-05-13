@@ -23,7 +23,7 @@ auth or network issues, or confirm repos are reachable before digging into sourc
 
 export function registerDigStatus(
   server: McpServer,
-  config: DiggerConfig,
+  config: DiggerConfig | null,
 ): void {
   server.registerTool(
     "dig_status",
@@ -43,8 +43,26 @@ export function registerDigStatus(
  *
  * Never throws — returns a usable response even when repos are unreachable.
  */
-export async function digStatus(config: DiggerConfig): Promise<string> {
+export async function digStatus(config: DiggerConfig | null): Promise<string> {
   debug("digStatus", "called");
+
+  if (!config) {
+    return [
+      "# mcp-digger status",
+      "",
+      "**Server running in unconfigured mode** — no `.digger/config.json` found.",
+      "",
+      "Only `dig_status` and `dig_init` are available.",
+      "",
+      "## Setup",
+      "1. Run `dig_init` to create a starter `.digger/config.json`",
+      "2. Edit the generated template with your repository details",
+      "3. Restart the MCP server to activate all tools",
+      "",
+      "Or create `.digger/config.json` manually.",
+    ].join("\n");
+  }
+
   const sections: string[] = [];
   let issueCount = 0;
 

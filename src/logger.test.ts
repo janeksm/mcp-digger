@@ -118,18 +118,21 @@ describe("logger", () => {
 });
 
 describe("error()", () => {
-  it("writes to error.log before initLogger using cwd fallback", async () => {
-    const originalCwd = process.cwd();
-    process.chdir(tmpDir);
+  it("writes to stderr before initLogger and does not create .digger", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     try {
       const { error } = await loadLogger();
       error("startup", "config broke");
 
-      const content = fs.readFileSync(errorLogPath(), "utf-8");
-      expect(content).toContain("[startup]");
-      expect(content).toContain("config broke");
+      expect(stderrSpy).toHaveBeenCalledOnce();
+      const written = stderrSpy.mock.calls[0]![0] as string;
+      expect(written).toContain("[startup]");
+      expect(written).toContain("config broke");
+
+      const diggerDir = path.join(tmpDir, ".digger");
+      expect(fs.existsSync(diggerDir)).toBe(false);
     } finally {
-      process.chdir(originalCwd);
+      stderrSpy.mockRestore();
     }
   });
 

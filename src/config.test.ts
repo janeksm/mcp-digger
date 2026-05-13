@@ -370,14 +370,14 @@ describe("loadConfig — path resolution", () => {
 });
 
 describe("loadConfig — fatal errors", () => {
-  it("throws when config file is not found", () => {
-    try {
-      loadConfig({ DIGGER_CONFIG: "nonexistent.json" }, tmpDir);
-      expect.fail("expected ConfigError");
-    } catch (e) {
-      expect(e).toBeInstanceOf(ConfigError);
-      expect((e as Error).message).toMatch(/not found/);
-    }
+  it("returns null when config file is not found at default path", () => {
+    const result = loadConfig({}, tmpDir);
+    expect(result).toBeNull();
+  });
+
+  it("returns null when config file is not found at custom DIGGER_CONFIG path", () => {
+    const result = loadConfig({ DIGGER_CONFIG: "custom/path/config.json" }, tmpDir);
+    expect(result).toBeNull();
   });
 
   it("throws when config file is invalid JSON", () => {
