@@ -35,6 +35,4 @@ To either: (a) specify an additional grant of rights to use that does not impose
 
 The Business Source License (this document, or the “License”) is not an Open Source license. However, the Licensed Work will eventually be made available under an Open Source License, as stated in this License.
 
-For more information on the use of the Business Source License for MariaDB products, please visit the [MariaDB Business Source License FAQ](https://mariadb.com/bsl-faq-mariadb/). For more information on the use of the Business Source License generally, please visit the [Adopting and Developing Business Source License FAQ](https://mariadb.com/bsl-faq-adopting/).
-
-[Projects using BSL](https://mariadb.com/projects-using-bsl-11/)
+For more information on the Business Source License, visit https://mariadb.com/bsl11/
