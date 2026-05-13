@@ -134,7 +134,7 @@ dig_refresh(repo?)  ← force cache invalidation, suggested by "no matches" mess
 (operational)
 ```
 
-Each tool's description guides Claude on when to escalate to the next level.
+Each tool's description guides Claude on when to escalate to the next level. Tool descriptions include comparative cost hints so the agent can choose the cheapest tool that answers its question: `dig_lookup` (fast indexed symbol/implements lookup; references mode scans source) → `dig_signatures` (stripped API surface) → `dig_file` (full source).
 
 ## Shared Conventions
 

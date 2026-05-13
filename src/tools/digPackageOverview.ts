@@ -19,7 +19,9 @@ const DESCRIPTION = `Returns the full overview for a single package in a reposit
 key public types and interfaces (summarised), architectural conventions, and
 usage patterns. Call dig_repo_overview first to discover packages in a repo.
 If you need to dig deeper — to find which file contains a specific type or
-method — call dig_lookup to search the package index.`;
+method — call dig_lookup to search the package index.
+
+Cost: medium on first call, cached afterward. Use for package orientation; use dig_lookup directly when you already have a target symbol.`;
 
 // ── Public API ──
 

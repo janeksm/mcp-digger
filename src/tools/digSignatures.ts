@@ -25,7 +25,9 @@ and XML doc comments with method bodies replaced by placeholders.
 Call this when you need exact method overloads, generic constraints,
 interface members, or return types for specific types.
 Call dig_package_overview first, then dig_lookup to locate symbols,
-then dig_signatures to see their full public API surface.`;
+then dig_signatures to see their full public API surface.
+
+Cost: cheaper than dig_file — returns API shape without method bodies. Use when you need signatures, not full implementation.`;
 
 const KEYWORD_PARAM = z.string().describe(
   "Type name, method name, or keyword to search for (e.g. 'EntityBase', 'GetByIdAsync')",

@@ -15,7 +15,9 @@ Call this only when you need to understand the actual implementation — for exa
 to trace specific behaviour, understand a complex algorithm, or debug an unexpected
 result. Provide both package name and file path (relative path as shown by
 dig_lookup or dig_package_files). Avoid calling this speculatively — prefer dig_lookup
-to find the right file first, then dig_file only for the specific file you need.`;
+to find the right file first, then dig_file only for the specific file you need.
+
+Cost: most expensive tool — returns full source. Prefer dig_signatures when API shape is enough.`;
 
 // ── Public API ──
 

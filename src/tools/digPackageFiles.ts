@@ -10,7 +10,9 @@ import { filterCsFiles } from "../sourceExtractor.js";
 // ── Tool description (shown to Claude Code) ──
 
 const DESCRIPTION = `Lists all C# source files in a package (excluding generated files).
-Use this to see what files exist before calling dig_file for full source.`;
+Use this to see what files exist before calling dig_file for full source.
+
+Cost: lightweight file listing. For large packages (many files), prefer dig_lookup to find specific types directly.`;
 
 // ── Public API ──
 

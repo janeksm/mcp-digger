@@ -34,7 +34,9 @@ Supports three search modes via the 'mode' parameter:
 - "references": find files that reference a given type name in source code (word-boundary, case-sensitive).
 
 Call dig_package_overview first to understand a package, then dig_lookup to locate specific
-types or methods, then dig_file to read the full source of a matched file.`;
+types or methods, then dig_file to read the full source of a matched file.
+
+Cost: symbol/implements modes are the fastest search — cached index, no source reading. References mode scans source files and is heavier. Prefer over dig_signatures when you only need to locate files.`;
 
 const KEYWORD_PARAM = z.string().describe(
   "Type name, method name, or keyword to search for (e.g. 'IOrderService', 'GetByIdAsync')",

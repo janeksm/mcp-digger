@@ -11,7 +11,9 @@ import { filterReadmeSections } from "../readmeFilter.js";
 
 const DESCRIPTION = `Returns the repo root README.md (architecture, conventions, design docs) when it exists.
 Use this to understand a repo's structure and design before digging into specific packages.
-Call dig_list first to discover available repos and their packages, then call this with a repo name.`;
+Call dig_list first to discover available repos and their packages, then call this with a repo name.
+
+Cost: lightweight — filtered README only. Skip if dig_list already provided enough context.`;
 
 // ── Public API ──
 
