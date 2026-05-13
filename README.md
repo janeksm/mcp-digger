@@ -209,7 +209,3 @@ Enable debug logging in your config:
 ```
 
 Logs are written to `.digger/debug.log`.
-
-## License
-
-MIT
