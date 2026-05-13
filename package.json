@@ -1,9 +1,9 @@
 {
   "name": "mcp-digger",
-  "version": "1.0.0",
+  "version": "0.7.0",
   "description": "MCP server giving Claude Code progressive, on-demand access to .NET NuGet package source code.",
   "type": "module",
-  "license": "MIT",
+  "license": "BUSL-1.1",
   "author": "Janeks Malinovskis",
   "repository": {
     "type": "git",
