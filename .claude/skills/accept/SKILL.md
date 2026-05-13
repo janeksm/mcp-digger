@@ -74,16 +74,16 @@ Ask the user to confirm before committing. Do NOT commit automatically.
 
 **Update DESIGN.md** if changes affect MCP server design (tools, transport, annotations, schemas, descriptions, patterns, conventions). Skip for internal changes (bug fixes, refactors, tests).
 
-**Update PATTERNS.md (CMCM)** if the implementation introduced a reusable pattern not yet documented. A pattern qualifies if it: (a) is used in 2+ places or will clearly be reused, (b) has a non-obvious shape, and (c) is specific to this codebase. If so, append:
+**Update PATTERNS.md — MANDATORY CHECK.** Review the diff and ask: *"Did this implementation introduce a reusable pattern not yet in PATTERNS.md?"* A pattern qualifies if: (a) used in 2+ places or will clearly be reused, (b) non-obvious shape, (c) codebase-specific.
 
-```
-## pattern-name
-When: trigger condition
-Shape: how it works
-Examples: file list
-```
-
-Skip if no new pattern — most steps will not add one.
+- If YES → append to `PATTERNS.md`:
+  ```
+  ## pattern-name
+  When: trigger condition
+  Shape: how it works
+  Examples: file list
+  ```
+- If NO → skip, but confirm in output: `PATTERNS.md: no new entries (no new reusable patterns)`
 
 ### 7. Commit
 

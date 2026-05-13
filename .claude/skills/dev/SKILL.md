@@ -36,15 +36,15 @@ Full TDD development cycle from planning through verified implementation. Reads/
 
 ### Phase 2 — Record Decisions & Session State
 
-4. **Log rejected alternatives.** After the plan is approved, if the planning process considered and rejected alternative approaches, append an entry to `DECISIONS.md`:
+4. **Log rejected alternatives — MANDATORY CHECK.** After the plan is approved, explicitly review the planning discussion and ask: *"Were any alternative approaches considered and rejected?"*
 
-   ```
-   ## YYYY-MM-DD — short title
-   Chose X over Y.
-   Why: reasoning from the plan discussion
-   ```
-
-   Skip this if the plan was straightforward with no meaningful alternatives considered.
+   - If YES → append to `DECISIONS.md`:
+     ```
+     ## YYYY-MM-DD — short title
+     Chose X over Y.
+     Why: reasoning from the plan discussion
+     ```
+   - If NO (straightforward, no real alternatives) → skip, but confirm in output: `DECISIONS.md: no new entries (no alternatives considered)`
 
 5. **Write HANDOFF.md.** Overwrite `HANDOFF.md` with current session state:
 
