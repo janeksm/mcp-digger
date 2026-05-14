@@ -711,7 +711,7 @@ function parseBaseTypes(declarationText: string): string[] {
     .filter((p) => p.length > 0 && /^\w+$/.test(p));
 }
 
-function splitRespectingGenerics(text: string): string[] {
+export function splitRespectingGenerics(text: string): string[] {
   const parts: string[] = [];
   let depth = 0;
   let current = "";

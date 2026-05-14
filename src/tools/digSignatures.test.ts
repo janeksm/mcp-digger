@@ -478,6 +478,182 @@ describe("digSignatures — error handling", () => {
   });
 });
 
+// ── Summary block ──
+
+describe("digSignatures — summary block", () => {
+  it("shows summary blockquote for type match with method counts and key methods", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/OrderService.cs": [
+        "namespace MyLib;",
+        "public class OrderService",
+        "{",
+        "    public Task<Order> GetOrderAsync(int id) { return null; }",
+        "    public int CreateOrder(Order order) { return 0; }",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digSignatures(config, "MyLib", "OrderService");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("> **OrderService** (class)");
+    expect(result.text).toContain("Methods: 2");
+    expect(result.text).toContain("Key:");
+    expect(result.text).toContain("GetOrderAsync");
+  });
+
+  it("shows implements list from base types", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/OrderService.cs": [
+        "namespace MyLib;",
+        "public class OrderService : IOrderService, IDisposable",
+        "{",
+        "    public void Execute() { }",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digSignatures(config, "MyLib", "OrderService");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("Implements: IOrderService, IDisposable");
+  });
+
+  it("counts protected methods separately from public", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/BaseService.cs": [
+        "namespace MyLib;",
+        "public abstract class BaseService",
+        "{",
+        "    public void Execute() { }",
+        "    public Task<int> GetCountAsync() { return Task.FromResult(0); }",
+        "    protected void Validate() { }",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digSignatures(config, "MyLib", "BaseService");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("2 public, 1 protected");
+  });
+
+  it("shows method count for interface (no access distinction)", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/IOrderService.cs": [
+        "namespace MyLib;",
+        "public interface IOrderService",
+        "{",
+        "    Task<Order> GetOrderAsync(int id);",
+        "    void CreateOrder(Order order);",
+        "    void DeleteOrder(int id);",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digSignatures(config, "MyLib", "IOrderService");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("Methods: 3");
+  });
+
+  it("does not show summary for method-only match", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/OrderService.cs": [
+        "namespace MyLib;",
+        "public class OrderService",
+        "{",
+        "    public void UniqueMethodName() { }",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digSignatures(config, "MyLib", "UniqueMethodName");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("OrderService.cs");
+    // No blockquote summary for method-only matches
+    const lines = result.text.split("\n");
+    const summaryLines = lines.filter((l: string) => l.startsWith("> **"));
+    expect(summaryLines.length).toBe(0);
+  });
+
+  it("excludes constructors from method count", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/OrderService.cs": [
+        "namespace MyLib;",
+        "public class OrderService",
+        "{",
+        "    public OrderService(int id) { }",
+        "    public void Execute() { }",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digSignatures(config, "MyLib", "OrderService");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("Methods: 1");
+    expect(result.text).not.toMatch(/Methods: 2/);
+  });
+
+  it("shows type info only for enum (no methods section)", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/OrderStatus.cs": [
+        "namespace MyLib;",
+        "public enum OrderStatus",
+        "{",
+        "    Pending,",
+        "    Active,",
+        "    Completed",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digSignatures(config, "MyLib", "OrderStatus");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("> **OrderStatus** (enum)");
+    expect(result.text).not.toContain("Methods:");
+    expect(result.text).not.toContain("Key:");
+  });
+});
+
 // ── Empty package ──
 
 describe("digSignatures — empty package", () => {

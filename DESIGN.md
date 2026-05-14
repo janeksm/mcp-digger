@@ -94,7 +94,7 @@
 
 **Purpose:** Returns stripped C# signatures filtered by keyword. Searches the package's type and method index, then returns stripped source for matching files — type declarations, method signatures, property definitions, and XML doc comments with method bodies replaced by placeholders. Call when you need exact method overloads, generic constraints, interface members, or return types for specific types.
 
-**Output:** Markdown with fenced C# code blocks per matching file. Headings show symbol name with generics and kind with modifiers for type matches (e.g. `EntityBase<TId> (abstract class)`), or file path for method matches. Each file has a generated header with package name and commit hash. Uses the same index as `dig_lookup` for search and per-file signature cache under `signatures/` directory, both invalidated by commit hash.
+**Output:** Markdown with fenced C# code blocks per matching file. Headings show symbol name with generics and kind with modifiers for type matches (e.g. `EntityBase<TId> (abstract class)`), or file path for method matches. For type matches, a structured summary blockquote precedes each code block: type name with kind, implements list (from index base types, capped at 3), method counts (public vs protected), and up to 3 key method signatures with param types and return types (e.g. `> **EntityBase<TId>** (abstract class) · Implements: IEntity · Methods: 2 public, 1 protected · Key: GetByIdAsync(int) → Task<Order>`). Multi-type files omit method counts to avoid cross-type confusion. Enums show type info only. Uses the same index as `dig_lookup` for search and per-file signature cache under `signatures/` directory, both invalidated by commit hash.
 
 ### `dig_refresh` — Operational: Cache Refresh
 
