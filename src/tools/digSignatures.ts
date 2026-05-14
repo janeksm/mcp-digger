@@ -210,5 +210,12 @@ function formatSignatures(
     lines.push("```");
   }
 
+  lines.push("");
+  if (signatures.length === 1) {
+    lines.push("Use `dig_file` for full implementation.");
+  } else {
+    lines.push("Use `dig_file` with the specific file path for full implementation.");
+  }
+
   return lines.join("\n");
 }

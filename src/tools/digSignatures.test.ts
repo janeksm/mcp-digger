@@ -265,6 +265,33 @@ describe("digSignatures — keyword filtering", () => {
   });
 });
 
+// ── Contextual hints ──
+
+describe("digSignatures — contextual hints", () => {
+  it("hints dig_file for full implementation", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/IService.cs": [
+        "namespace MyLib;",
+        "public interface IService",
+        "{",
+        "    void Execute();",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digSignatures(config, "MyLib", "IService");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("dig_file");
+    expect(result.text).toContain("full implementation");
+  });
+});
+
 // ── Caching ──
 
 describe("digSignatures — caching", () => {

@@ -739,6 +739,75 @@ describe("references mode", () => {
     expect(result.text).toContain("No references");
   });
 
+  // ── Contextual hints ──
+
+  it("hints dig_signatures/dig_file for single symbol match", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/OrderService.cs": CS_CLASS("Lib", "OrderService"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "OrderService");
+
+    expect(result.text).toContain("Single match");
+    expect(result.text).toContain("dig_signatures");
+    expect(result.text).toContain("dig_file");
+  });
+
+  it("hints implements mode when interface found", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/IService.cs": CS_INTERFACE("Lib", "IService"),
+      "src/Lib/IRepo.cs": CS_INTERFACE("Lib", "IRepo"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "I");
+
+    expect(result.text).toContain("implements");
+  });
+
+  it("hints implements mode cross-package when interface found", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Core/IHandler.cs": CS_INTERFACE("Core", "IHandler"),
+      "src/App/Worker.cs": CS_CLASS("App", "Worker"),
+    });
+
+    const core = makePkg("Core", "myrepo", "src", cacheDir);
+    const app = makePkg("App", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [core, app], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, undefined, "Handler");
+
+    expect(result.text).toContain("implements");
+  });
+
+  it("hints single implementor in implements mode", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/IService.cs": CS_INTERFACE("Lib", "IService"),
+      "src/Lib/Impl.cs": CS_WITH_BASE("Lib", "Impl", "IService"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "IService", "implements");
+
+    expect(result.text).toContain("Single implementor");
+    expect(result.text).toContain("dig_signatures");
+  });
+
   it("default mode is symbol (backward compat)", async () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {

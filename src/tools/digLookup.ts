@@ -174,6 +174,47 @@ function searchIndexForImplementors(entries: IndexEntry[], keyword: string): Ind
   );
 }
 
+// ── Contextual hint builders ──
+
+function buildSymbolHints(matches: IndexEntry[], isCrossPackage: boolean): string[] {
+  const hints: string[] = [];
+  if (matches.some((m) => m.kind === "interface")) {
+    hints.push('**Tip:** Found interface — use `dig_lookup` with `mode: "implements"` to find implementations.');
+  }
+  if (matches.length === 1) {
+    hints.push("Single match — use `dig_signatures` for API surface or `dig_file` for full source.");
+  } else if (matches.length >= 50) {
+    const narrow = isCrossPackage
+      ? "specify `packageName` or use a more specific keyword"
+      : "use a more specific keyword";
+    hints.push(`Many matches — ${narrow}.`);
+  } else {
+    hints.push("Use `dig_signatures` for API surface or `dig_file` for full source.");
+  }
+  return hints;
+}
+
+function buildImplementsHints(matches: IndexEntry[]): string[] {
+  if (matches.length === 1) {
+    return ["Single implementor — use `dig_signatures` for API surface or `dig_file` for full source."];
+  }
+  return ["Use `dig_signatures` for API surface or `dig_file` for full source."];
+}
+
+function buildReferencesHints(totalFiles: number): string[] {
+  if (totalFiles === 1) {
+    return ["Single file — use `dig_file` to read source."];
+  }
+  return ["Use `dig_file` with the specific packageName and file path to read source."];
+}
+
+function buildCrossReferencesHints(totalFiles: number): string[] {
+  if (totalFiles === 1) {
+    return ["Single file — use `dig_file` with the specific packageName and file path to read source."];
+  }
+  return ["Use `dig_file` with the specific packageName and file path to inspect each reference."];
+}
+
 // ── Single-package formatting ──
 
 function formatMatchLine(m: IndexEntry): string {
@@ -207,7 +248,7 @@ function formatMatches(
   }
 
   lines.push("");
-  lines.push(`Use dig_file with packageName "${packageName}" and the file path to read full source.`);
+  lines.push(...buildSymbolHints(matches, false));
 
   return lines.join("\n");
 }
@@ -224,7 +265,7 @@ function formatImplementsResults(
   lines.push("");
   for (const m of matches) lines.push(formatImplementsMatchLine(m));
   lines.push("");
-  lines.push(`Use dig_file with packageName "${packageName}" and the file path to read full source.`);
+  lines.push(...buildImplementsHints(matches));
   return lines.join("\n");
 }
 
@@ -237,6 +278,7 @@ interface CrossPackageIndexOpts {
   formatLineFn: (m: IndexEntry) => string;
   countNoun: string;
   noMatchMsg: (keyword: string) => string;
+  buildHints: (allMatches: IndexEntry[]) => string[];
 }
 
 const SYMBOL_SEARCH_OPTS: CrossPackageIndexOpts = {
@@ -246,6 +288,7 @@ const SYMBOL_SEARCH_OPTS: CrossPackageIndexOpts = {
   formatLineFn: formatMatchLine,
   countNoun: "match",
   noMatchMsg: (kw) => `No matches for '${kw}' across any package. Try a broader term, call dig_list to see available packages, or call dig_refresh to force a re-index.`,
+  buildHints: (allMatches) => buildSymbolHints(allMatches, true),
 };
 
 const IMPLEMENTS_SEARCH_OPTS: CrossPackageIndexOpts = {
@@ -255,6 +298,7 @@ const IMPLEMENTS_SEARCH_OPTS: CrossPackageIndexOpts = {
   formatLineFn: formatImplementsMatchLine,
   countNoun: "implementor",
   noMatchMsg: (kw) => `No types implementing '${kw}' found across any package. Verify the exact type name or call dig_refresh to force a re-index.`,
+  buildHints: (allMatches) => buildImplementsHints(allMatches),
 };
 
 async function crossPackageIndexSearch(
@@ -365,6 +409,8 @@ function formatCrossPackageIndexResults(
     `Found ${countLabel} ${opts.countNoun}${totalMatches === 1 ? "" : "s"} across ${results.length} package${results.length === 1 ? "" : "s"}:`,
   );
 
+  const allMatches = results.flatMap((r) => r.matches);
+
   for (const { packageName, matches } of results) {
     lines.push("");
     lines.push(`## ${packageName}`);
@@ -373,7 +419,7 @@ function formatCrossPackageIndexResults(
   }
 
   lines.push("");
-  lines.push("Use dig_file or dig_signatures with the specific packageName and file path to read source.");
+  lines.push(...opts.buildHints(allMatches));
 
   if (capped) {
     lines.push("");
@@ -509,7 +555,7 @@ function formatReferencesResults(
     lines.push(`- \`${r.filePath}\` (${label})`);
   }
   lines.push("");
-  lines.push(`Use dig_file with packageName "${packageName}" and the file path to read full source.`);
+  lines.push(...buildReferencesHints(refs.length));
   return lines.join("\n");
 }
 
@@ -611,7 +657,7 @@ function formatCrossPackageReferences(
   }
 
   lines.push("");
-  lines.push("Use dig_file or dig_signatures with the specific packageName and file path to read source.");
+  lines.push(...buildCrossReferencesHints(totalFiles));
 
   if (capped) {
     lines.push("");

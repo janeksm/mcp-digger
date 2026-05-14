@@ -9,6 +9,8 @@ import { filterCsFiles } from "../sourceExtractor.js";
 
 // ── Tool description (shown to Claude Code) ──
 
+const FILE_COUNT_HINT_THRESHOLD = 10;
+
 const DESCRIPTION = `Lists all C# source files in a package (excluding generated files).
 Use this to see what files exist before calling dig_file for full source.
 
@@ -76,7 +78,11 @@ export async function digPackageFiles(
     }
 
     lines.push("");
-    lines.push(`*${csFiles.length} file${csFiles.length === 1 ? "" : "s"}*`);
+    if (csFiles.length > FILE_COUNT_HINT_THRESHOLD) {
+      lines.push(`*${csFiles.length} files — use dig_lookup to find specific types instead of browsing.*`);
+    } else {
+      lines.push(`*${csFiles.length} file${csFiles.length === 1 ? "" : "s"} — use dig_file to read source, or dig_lookup to search by symbol.*`);
+    }
 
     return toolSuccess(lines.join("\n").trimEnd());
   });

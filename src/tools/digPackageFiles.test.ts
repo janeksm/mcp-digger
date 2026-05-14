@@ -43,7 +43,7 @@ describe("digPackageFiles", () => {
     expect(result.text).toContain("Domain/ (1) · Services/ (1)");
     expect(result.text).toContain("- Domain/User.cs");
     expect(result.text).toContain("- Services/Auth.cs");
-    expect(result.text).toContain("*2 files*");
+    expect(result.text).toContain("*2 files —");
   });
 
   it("excludes generated files", async () => {
@@ -65,7 +65,7 @@ describe("digPackageFiles", () => {
     expect(result.text).not.toContain("Class1.g.cs");
     expect(result.text).not.toContain("Model.generated.cs");
     expect(result.text).not.toContain("View.Designer.cs");
-    expect(result.text).toContain("*1 file*");
+    expect(result.text).toContain("*1 file —");
   });
 
   it("returns empty message when package has no .cs files", async () => {
@@ -82,6 +82,45 @@ describe("digPackageFiles", () => {
 
     expect(result.isError).toBe(false);
     expect(result.text).toContain("No C# source files found");
+  });
+});
+
+// ── Contextual hints ──
+
+describe("contextual hints", () => {
+  it("hints dig_file for small package", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/A.cs": "public class A { }",
+      "src/MyLib/B.cs": "public class B { }",
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digPackageFiles(config, "myrepo", "MyLib");
+
+    expect(result.text).toContain("dig_file");
+    expect(result.text).toContain("dig_lookup");
+  });
+
+  it("hints dig_lookup for large package", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 15; i++) {
+      files[`src/MyLib/Services/Svc${i}.cs`] = `public class Svc${i} { }`;
+    }
+    const repoDir = await initRepo(tmpDir, files);
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digPackageFiles(config, "myrepo", "MyLib");
+
+    expect(result.text).toContain("dig_lookup");
+    expect(result.text).toContain("instead of browsing");
   });
 });
 
