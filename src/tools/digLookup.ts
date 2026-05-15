@@ -18,6 +18,7 @@ import {
   parseIndex,
   searchReferences,
   formatEntryDisplay,
+  scoreSymbolMatch,
   type IndexEntry,
   type FileReference,
 } from "../sourceExtractor.js";
@@ -163,8 +164,13 @@ interface PackageMatches {
 }
 
 function searchIndex(entries: IndexEntry[], keyword: string): IndexEntry[] {
-  const lower = keyword.toLowerCase();
-  return entries.filter((e) => e.symbol.toLowerCase().includes(lower));
+  const scored: Array<{ entry: IndexEntry; score: number }> = [];
+  for (const entry of entries) {
+    const score = scoreSymbolMatch(entry.symbol, keyword);
+    if (score > 0) scored.push({ entry, score });
+  }
+  scored.sort((a, b) => b.score - a.score || a.entry.symbol.localeCompare(b.entry.symbol));
+  return scored.map((s) => s.entry);
 }
 
 function searchIndexForImplementors(entries: IndexEntry[], keyword: string): IndexEntry[] {

@@ -825,3 +825,83 @@ describe("references mode", () => {
     expect(result.text).toContain("IService");
   });
 });
+
+// ── Result ranking ──
+
+describe("result ranking", () => {
+  it("ranks exact match above prefix above substring", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    // Names chosen so alphabetical order (AReorderUtil, Order, ZOrderService)
+    // differs from ranked order (Order=1.0, ZOrderService=0.8, AReorderUtil=0.6)
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/AReorderUtil.cs": "namespace Lib;\npublic class AReorderUtil\n{\n}",
+      "src/Lib/Order.cs": "namespace Lib;\npublic class Order\n{\n}",
+      "src/Lib/ZOrderService.cs": "namespace Lib;\npublic class ZOrderService\n{\n}",
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "Order");
+
+    expect(result.isError).toBe(false);
+    const lines = result.text.split("\n").filter((l: string) => l.startsWith("- **"));
+    // Ranked: exact (1.0), then boundary/prefix (0.8), then substring (0.6)
+    expect(lines[0]).toContain("**Order**");
+    expect(lines[1]).toContain("**ZOrderService**");
+    expect(lines[2]).toContain("**AReorderUtil**");
+  });
+
+  it("sub-sorts alphabetically within same score tier", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    // Both score 0.8 (PascalCase boundary), alphabetical tiebreaker
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/ZetaOrder.cs": "namespace Lib;\npublic class ZetaOrder\n{\n}",
+      "src/Lib/AlphaOrder.cs": "namespace Lib;\npublic class AlphaOrder\n{\n}",
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "Order");
+
+    expect(result.isError).toBe(false);
+    const lines = result.text.split("\n").filter((l: string) => l.startsWith("- **"));
+    expect(lines[0]).toContain("**AlphaOrder**");
+    expect(lines[1]).toContain("**ZetaOrder**");
+  });
+
+  it("cross-package: sorts within each package group by score", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    // Alpha: AReorderUtil (0.6 alphabetically first) and Order (1.0 alphabetically second)
+    // Beta: AReorderHelper (0.6) and IOrder (0.8)
+    const repoDir = await initRepo(tmpDir, {
+      "src/Alpha/AReorderUtil.cs": "namespace Alpha;\npublic class AReorderUtil\n{\n}",
+      "src/Alpha/Order.cs": "namespace Alpha;\npublic class Order\n{\n}",
+      "src/Beta/AReorderHelper.cs": "namespace Beta;\npublic class AReorderHelper\n{\n}",
+      "src/Beta/IOrder.cs": "namespace Beta;\npublic interface IOrder\n{\n}",
+    });
+
+    const alpha = makePkg("Alpha", "myrepo", "src", cacheDir);
+    const beta = makePkg("Beta", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [alpha, beta], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, undefined, "Order");
+
+    expect(result.isError).toBe(false);
+    // Within Alpha: Order (exact 1.0) before AReorderUtil (substring 0.6)
+    const alphaSection = result.text.split("## Beta")[0]!;
+    const alphaLines = alphaSection.split("\n").filter((l: string) => l.startsWith("- **"));
+    expect(alphaLines[0]).toContain("**Order**");
+    expect(alphaLines[1]).toContain("**AReorderUtil**");
+
+    // Within Beta: IOrder (boundary 0.8) before AReorderHelper (substring 0.6)
+    const betaSection = result.text.split("## Beta")[1]!;
+    const betaLines = betaSection.split("\n").filter((l: string) => l.startsWith("- **"));
+    expect(betaLines[0]).toContain("**IOrder**");
+    expect(betaLines[1]).toContain("**AReorderHelper**");
+  });
+});

@@ -654,6 +654,120 @@ describe("digSignatures — summary block", () => {
   });
 });
 
+// ── Result ranking ──
+
+describe("digSignatures — result ranking", () => {
+  it("ranks exact match above prefix above substring in file order", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    // Names chosen so alphabetical order (AReorderHelper, Order, ZOrderService)
+    // differs from ranked order (Order=1.0, ZOrderService=0.8, AReorderHelper=0.6)
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/AReorderHelper.cs": [
+        "namespace MyLib;",
+        "public class AReorderHelper",
+        "{",
+        "    public void Do() { }",
+        "}",
+      ].join("\n"),
+      "src/MyLib/Order.cs": [
+        "namespace MyLib;",
+        "public class Order",
+        "{",
+        "    public void Do() { }",
+        "}",
+      ].join("\n"),
+      "src/MyLib/ZOrderService.cs": [
+        "namespace MyLib;",
+        "public class ZOrderService",
+        "{",
+        "    public void Do() { }",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digSignatures(config, "MyLib", "Order");
+
+    expect(result.isError).toBe(false);
+    const headings = result.text.split("\n").filter((l: string) => l.startsWith("## "));
+    expect(headings[0]).toContain("Order (class)");
+    expect(headings[1]).toContain("ZOrderService (class)");
+    expect(headings[2]).toContain("AReorderHelper (class)");
+  });
+
+  it("sub-sorts by file path within same score tier", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    // Both score 0.8 (PascalCase boundary on 'O'), file path tiebreaker
+    // sigsCached comes path-sorted, so without ranking sort this would be
+    // AlphaOrder, ZetaOrder (both same score). With ranking: same.
+    // To test tiebreaker, use names where path order = expected order.
+    // Key: verify deterministic path-based sub-sort is stable.
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/ZetaOrder.cs": [
+        "namespace MyLib;",
+        "public class ZetaOrder",
+        "{",
+        "    public void Do() { }",
+        "}",
+      ].join("\n"),
+      "src/MyLib/AlphaOrder.cs": [
+        "namespace MyLib;",
+        "public class AlphaOrder",
+        "{",
+        "    public void Do() { }",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digSignatures(config, "MyLib", "Order");
+
+    expect(result.isError).toBe(false);
+    const headings = result.text.split("\n").filter((l: string) => l.startsWith("## "));
+    expect(headings[0]).toContain("AlphaOrder");
+    expect(headings[1]).toContain("ZetaOrder");
+  });
+
+  it("ranks stale fallback results by score", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const pkg = makePkg("StaleLib", "gonerepo", "src", cacheDir);
+
+    await writeIndex(
+      pkg,
+      "Order|class|Order.cs\nOrderService|class|OrderService.cs\nReorderHelper|class|ReorderHelper.cs",
+    );
+    await writeSignature(pkg, "Order.cs", "class Order { }");
+    await writeSignature(pkg, "OrderService.cs", "class OrderService { }");
+    await writeSignature(pkg, "ReorderHelper.cs", "class ReorderHelper { }");
+
+    const repo = makeRepoConfig(
+      {
+        name: "gonerepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkg],
+      },
+      tmpDir,
+    );
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digSignatures(config, "StaleLib", "Order");
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("Warning");
+    const headings = result.text.split("\n").filter((l: string) => l.startsWith("## "));
+    expect(headings[0]).toContain("Order");
+    expect(headings[0]).not.toContain("OrderService");
+    expect(headings[1]).toContain("OrderService");
+    expect(headings[2]).toContain("ReorderHelper");
+  });
+});
+
 // ── Empty package ──
 
 describe("digSignatures — empty package", () => {

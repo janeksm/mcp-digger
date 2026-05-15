@@ -14,7 +14,7 @@ import type { DiggerConfig } from "../config.js";
 import { debug, error } from "../logger.js";
 import { withRepoLock } from "../repoLock.js";
 import { ensureReady } from "../repoManager.js";
-import { extractIndex, extractSignatures, serializeIndex, parseIndex, formatEntryDisplay, splitRespectingGenerics, type IndexEntry } from "../sourceExtractor.js";
+import { extractIndex, extractSignatures, serializeIndex, parseIndex, formatEntryDisplay, splitRespectingGenerics, scoreSymbolMatch, type IndexEntry } from "../sourceExtractor.js";
 
 // ── Tool description (shown to Claude Code) ──
 
@@ -124,6 +124,7 @@ export async function digSignatures(
       }
 
       const matchedSigs = sigsCached.filter((s) => matchedFiles.has(s.filePath));
+      sortByScore(matchedSigs, matchedFiles);
 
       if (matchedSigs.length === 0) {
         return toolSuccess(`# ${packageName}\n\nNo .cs source files found.`);
@@ -143,6 +144,7 @@ export async function digSignatures(
         const entries = parseIndex(staleIndex);
         const matchedFiles = searchIndexForFiles(entries, keyword, exactMatch);
         const matchedSigs = staleSigs.filter((s) => matchedFiles.has(s.filePath));
+        sortByScore(matchedSigs, matchedFiles);
 
         if (matchedSigs.length > 0) {
           return toolSuccess(
@@ -158,29 +160,55 @@ export async function digSignatures(
 
 // ── Internal ──
 
+interface FileMatch {
+  entry: IndexEntry;
+  score: number;
+}
+
 function searchIndexForFiles(
   entries: IndexEntry[],
   keyword: string,
   exactMatch: boolean,
-): Map<string, IndexEntry> {
+): Map<string, FileMatch> {
   const lower = keyword.toLowerCase();
-  const matched = new Map<string, IndexEntry>();
+  const matched = new Map<string, FileMatch>();
 
   for (const entry of entries) {
-    const symbolLower = entry.symbol.toLowerCase();
-    const isMatch = exactMatch
-      ? symbolLower === lower
-      : symbolLower.includes(lower);
+    const score = exactMatch
+      ? (entry.symbol.toLowerCase() === lower ? 1.0 : 0)
+      : scoreSymbolMatch(entry.symbol, keyword);
 
-    if (!isMatch) continue;
+    if (score === 0) continue;
 
     const existing = matched.get(entry.filePath);
-    if (!existing || (entry.kind !== "method" && existing.kind === "method")) {
-      matched.set(entry.filePath, entry);
+    if (!existing) {
+      matched.set(entry.filePath, { entry, score });
+    } else {
+      const bestScore = Math.max(score, existing.score);
+      let bestEntry: IndexEntry;
+      if (entry.kind !== "method" && existing.entry.kind === "method") {
+        bestEntry = entry;
+      } else if (existing.entry.kind !== "method" && entry.kind === "method") {
+        bestEntry = existing.entry;
+      } else {
+        bestEntry = score > existing.score ? entry : existing.entry;
+      }
+      matched.set(entry.filePath, { entry: bestEntry, score: bestScore });
     }
   }
 
   return matched;
+}
+
+function sortByScore(
+  sigs: Array<{ filePath: string; content: string }>,
+  matchedFiles: Map<string, FileMatch>,
+): void {
+  sigs.sort((a, b) => {
+    const sa = matchedFiles.get(a.filePath)?.score ?? 0;
+    const sb = matchedFiles.get(b.filePath)?.score ?? 0;
+    return sb - sa || a.filePath.localeCompare(b.filePath);
+  });
 }
 
 // ── Summary block ──
@@ -304,7 +332,7 @@ function formatSignatures(
   packageName: string,
   keyword: string,
   signatures: Array<{ filePath: string; content: string }>,
-  matchedFiles: Map<string, IndexEntry>,
+  matchedFiles: Map<string, FileMatch>,
 ): string {
   const lines: string[] = [];
   lines.push(`# ${packageName} — signatures: "${keyword}"`);
@@ -312,7 +340,7 @@ function formatSignatures(
   lines.push(`Found ${signatures.length} match${signatures.length === 1 ? "" : "es"}:`);
 
   for (const sig of signatures) {
-    const entry = matchedFiles.get(sig.filePath);
+    const entry = matchedFiles.get(sig.filePath)?.entry;
     let heading = sig.filePath;
     if (entry && entry.kind !== "method") {
       const { displayName, kindLabel } = formatEntryDisplay(entry);

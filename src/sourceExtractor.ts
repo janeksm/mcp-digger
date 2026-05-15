@@ -763,6 +763,25 @@ export function formatEntryDisplay(e: IndexEntry): { displayName: string; kindLa
   return { displayName, kindLabel };
 }
 
+export function scoreSymbolMatch(symbol: string, keyword: string): number {
+  if (!keyword) return 0;
+  const symbolLower = symbol.toLowerCase();
+  const keywordLower = keyword.toLowerCase();
+
+  if (symbolLower === keywordLower) return 1.0;
+
+  const pos = symbolLower.indexOf(keywordLower);
+  if (pos < 0) return 0;
+
+  if (pos === 0 || isUpperCase(symbol[pos]!)) return 0.8;
+
+  return 0.6;
+}
+
+function isUpperCase(ch: string): boolean {
+  return ch >= "A" && ch <= "Z";
+}
+
 export function filterCsFiles(files: string[]): string[] {
   return files.filter((f) => f.endsWith(".cs") && !isGenerated(f));
 }

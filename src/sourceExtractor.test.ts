@@ -16,6 +16,7 @@ import {
   formatEntryDisplay,
   countReferences,
   searchReferences,
+  scoreSymbolMatch,
 } from "./sourceExtractor.js";
 import { initRepo } from "./testHelpers.js";
 
@@ -2106,5 +2107,54 @@ describe("searchReferences", () => {
     const refs = await searchReferences(repoDir, pkg, "IFoo");
 
     expect(refs).toEqual([{ filePath: "Real.cs", count: 1 }]);
+  });
+});
+
+// ── scoreSymbolMatch ──
+
+describe("scoreSymbolMatch", () => {
+  it("returns 1.0 for exact case-insensitive match", () => {
+    expect(scoreSymbolMatch("OrderService", "OrderService")).toBe(1.0);
+    expect(scoreSymbolMatch("OrderService", "orderservice")).toBe(1.0);
+    expect(scoreSymbolMatch("OrderService", "ORDERSERVICE")).toBe(1.0);
+  });
+
+  it("returns 0.8 for prefix match", () => {
+    expect(scoreSymbolMatch("OrderService", "Order")).toBe(0.8);
+    expect(scoreSymbolMatch("OrderService", "order")).toBe(0.8);
+  });
+
+  it("returns 0.8 for PascalCase boundary match", () => {
+    expect(scoreSymbolMatch("IOrderService", "Order")).toBe(0.8);
+    expect(scoreSymbolMatch("MyOrderService", "Order")).toBe(0.8);
+    expect(scoreSymbolMatch("IOrderService", "Service")).toBe(0.8);
+  });
+
+  it("returns 0.6 for non-boundary substring match", () => {
+    expect(scoreSymbolMatch("ReorderHelper", "order")).toBe(0.6);
+    expect(scoreSymbolMatch("Recorder", "eco")).toBe(0.6);
+  });
+
+  it("returns 0 for no match", () => {
+    expect(scoreSymbolMatch("OrderService", "Customer")).toBe(0);
+    expect(scoreSymbolMatch("Foo", "FooBar")).toBe(0);
+  });
+
+  it("returns 0 for empty keyword", () => {
+    expect(scoreSymbolMatch("OrderService", "")).toBe(0);
+  });
+
+  it("returns 0 for keyword longer than symbol", () => {
+    expect(scoreSymbolMatch("A", "ABC")).toBe(0);
+  });
+
+  it("handles single-character keyword", () => {
+    expect(scoreSymbolMatch("A", "a")).toBe(1.0);
+    expect(scoreSymbolMatch("IService", "I")).toBe(0.8);
+  });
+
+  it("handles uppercase interior as boundary", () => {
+    expect(scoreSymbolMatch("XMLParser", "Parser")).toBe(0.8);
+    expect(scoreSymbolMatch("V2Order", "Order")).toBe(0.8);
   });
 });
