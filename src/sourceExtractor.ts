@@ -40,6 +40,7 @@ export interface IndexEntry {
   baseTypes?: string[];
   generics?: string;
   modifiers?: string;
+  refCount?: number;
   filePath: string;
 }
 
@@ -188,8 +189,34 @@ export async function extractIndex(
     entries.push(...scanFileForIndex(source, relPath));
   }
 
+  computeRefCounts(entries);
   entries.sort((a, b) => a.symbol.localeCompare(b.symbol));
   return entries;
+}
+
+export function computeRefCounts(entries: IndexEntry[]): void {
+  const typeNames = new Set<string>();
+  for (const e of entries) {
+    if (e.kind !== "method") typeNames.add(e.symbol);
+  }
+
+  const counts = new Map<string, number>();
+  for (const e of entries) {
+    if (!e.baseTypes) continue;
+    for (const base of e.baseTypes) {
+      if (base === e.symbol) continue;
+      if (!typeNames.has(base)) continue;
+      counts.set(base, (counts.get(base) ?? 0) + 1);
+    }
+  }
+
+  for (const e of entries) {
+    if (e.kind === "method") continue;
+    const count = counts.get(e.symbol);
+    if (count !== undefined && count > 0) {
+      e.refCount = count;
+    }
+  }
 }
 
 const PKG_DESC_RE = /<PackageDescription>(.*?)<\/PackageDescription>/s;
@@ -237,8 +264,10 @@ export function serializeIndex(entries: IndexEntry[]): string {
         return `${e.symbol}|method|${e.parentType}|${e.filePath}`;
       }
       const basePart = e.baseTypes?.length ? e.baseTypes.join(",") : "";
-      if (e.generics || e.modifiers) {
-        return `${e.symbol}|${e.kind}|${e.filePath}|${basePart}|${e.generics ?? ""}|${e.modifiers ?? ""}`;
+      const hasRefCount = e.refCount != null && e.refCount > 0;
+      if (e.generics || e.modifiers || hasRefCount) {
+        const refPart = hasRefCount ? `|${e.refCount}` : "";
+        return `${e.symbol}|${e.kind}|${e.filePath}|${basePart}|${e.generics ?? ""}|${e.modifiers ?? ""}${refPart}`;
       }
       const bases = basePart ? `|${basePart}` : "";
       return `${e.symbol}|${e.kind}|${e.filePath}${bases}`;
@@ -281,6 +310,12 @@ export function parseIndex(raw: string): IndexEntry[] {
       }
       if (parts.length >= 6 && parts[5]) {
         entry.modifiers = parts[5];
+      }
+      if (parts.length >= 7 && parts[6]) {
+        const n = parseInt(parts[6], 10);
+        if (Number.isFinite(n) && n > 0) {
+          entry.refCount = n;
+        }
       }
       return entry;
     });

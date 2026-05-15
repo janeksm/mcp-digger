@@ -205,9 +205,11 @@ function sortByScore(
   matchedFiles: Map<string, FileMatch>,
 ): void {
   sigs.sort((a, b) => {
-    const sa = matchedFiles.get(a.filePath)?.score ?? 0;
-    const sb = matchedFiles.get(b.filePath)?.score ?? 0;
-    return sb - sa || a.filePath.localeCompare(b.filePath);
+    const ma = matchedFiles.get(a.filePath);
+    const mb = matchedFiles.get(b.filePath);
+    return (mb?.score ?? 0) - (ma?.score ?? 0)
+      || (mb?.entry.refCount ?? 0) - (ma?.entry.refCount ?? 0)
+      || a.filePath.localeCompare(b.filePath);
   });
 }
 

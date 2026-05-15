@@ -169,7 +169,11 @@ function searchIndex(entries: IndexEntry[], keyword: string): IndexEntry[] {
     const score = scoreSymbolMatch(entry.symbol, keyword);
     if (score > 0) scored.push({ entry, score });
   }
-  scored.sort((a, b) => b.score - a.score || a.entry.symbol.localeCompare(b.entry.symbol));
+  scored.sort((a, b) =>
+    b.score - a.score
+    || (b.entry.refCount ?? 0) - (a.entry.refCount ?? 0)
+    || a.entry.symbol.localeCompare(b.entry.symbol),
+  );
   return scored.map((s) => s.entry);
 }
 

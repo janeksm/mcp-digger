@@ -904,4 +904,53 @@ describe("result ranking", () => {
     expect(betaLines[0]).toContain("**IOrder**");
     expect(betaLines[1]).toContain("**AReorderHelper**");
   });
+
+  it("uses refCount as tiebreaker when scores are equal", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    // Both ZetaHandler and AlphaHandler score 0.8 (PascalCase boundary on "Handler")
+    // Alphabetically AlphaHandler < ZetaHandler, but ZetaHandler has 2 implementors
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/ZetaHandler.cs": [
+        "namespace Lib;",
+        "public interface ZetaHandler",
+        "{",
+        "    void Handle();",
+        "}",
+      ].join("\n"),
+      "src/Lib/AlphaHandler.cs": [
+        "namespace Lib;",
+        "public interface AlphaHandler",
+        "{",
+        "    void Handle();",
+        "}",
+      ].join("\n"),
+      "src/Lib/ImplA.cs": [
+        "namespace Lib;",
+        "public class ImplA : ZetaHandler",
+        "{",
+        "    public void Handle() { }",
+        "}",
+      ].join("\n"),
+      "src/Lib/ImplB.cs": [
+        "namespace Lib;",
+        "public class ImplB : ZetaHandler",
+        "{",
+        "    public void Handle() { }",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digLookup(config, "Lib", "Handler");
+
+    expect(result.isError).toBe(false);
+    const lines = result.text.split("\n").filter((l: string) => l.startsWith("- **"));
+    // ZetaHandler (refCount=2) should come before AlphaHandler (refCount=0) despite alphabetical order
+    const zetaIdx = lines.findIndex((l: string) => l.includes("ZetaHandler"));
+    const alphaIdx = lines.findIndex((l: string) => l.includes("AlphaHandler"));
+    expect(zetaIdx).toBeLessThan(alphaIdx);
+  });
 });

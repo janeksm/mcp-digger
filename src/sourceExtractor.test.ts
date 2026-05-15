@@ -17,6 +17,8 @@ import {
   countReferences,
   searchReferences,
   scoreSymbolMatch,
+  computeRefCounts,
+  type IndexEntry,
 } from "./sourceExtractor.js";
 import { initRepo } from "./testHelpers.js";
 
@@ -2156,5 +2158,188 @@ describe("scoreSymbolMatch", () => {
   it("handles uppercase interior as boundary", () => {
     expect(scoreSymbolMatch("XMLParser", "Parser")).toBe(0.8);
     expect(scoreSymbolMatch("V2Order", "Order")).toBe(0.8);
+  });
+});
+
+// ── computeRefCounts ──
+
+describe("computeRefCounts", () => {
+  it("counts base class implementors", () => {
+    const entries: IndexEntry[] = [
+      { symbol: "Base", kind: "class", filePath: "Base.cs" },
+      { symbol: "ChildA", kind: "class", filePath: "ChildA.cs", baseTypes: ["Base"] },
+      { symbol: "ChildB", kind: "class", filePath: "ChildB.cs", baseTypes: ["Base"] },
+    ];
+    computeRefCounts(entries);
+    expect(entries[0]!.refCount).toBe(2);
+    expect(entries[1]!.refCount).toBeUndefined();
+    expect(entries[2]!.refCount).toBeUndefined();
+  });
+
+  it("counts interface implementors", () => {
+    const entries: IndexEntry[] = [
+      { symbol: "IService", kind: "interface", filePath: "IService.cs" },
+      { symbol: "SvcA", kind: "class", filePath: "SvcA.cs", baseTypes: ["IService"] },
+      { symbol: "SvcB", kind: "class", filePath: "SvcB.cs", baseTypes: ["IService"] },
+      { symbol: "SvcC", kind: "class", filePath: "SvcC.cs", baseTypes: ["IService"] },
+    ];
+    computeRefCounts(entries);
+    expect(entries[0]!.refCount).toBe(3);
+  });
+
+  it("leaves types with no implementors without refCount", () => {
+    const entries: IndexEntry[] = [
+      { symbol: "Lonely", kind: "class", filePath: "Lonely.cs" },
+      { symbol: "Other", kind: "class", filePath: "Other.cs" },
+    ];
+    computeRefCounts(entries);
+    expect(entries[0]!.refCount).toBeUndefined();
+    expect(entries[1]!.refCount).toBeUndefined();
+  });
+
+  it("counts multiple base types separately", () => {
+    const entries: IndexEntry[] = [
+      { symbol: "IFoo", kind: "interface", filePath: "IFoo.cs" },
+      { symbol: "IBar", kind: "interface", filePath: "IBar.cs" },
+      { symbol: "Impl", kind: "class", filePath: "Impl.cs", baseTypes: ["IFoo", "IBar"] },
+    ];
+    computeRefCounts(entries);
+    expect(entries[0]!.refCount).toBe(1);
+    expect(entries[1]!.refCount).toBe(1);
+    expect(entries[2]!.refCount).toBeUndefined();
+  });
+
+  it("ignores external base types not in index", () => {
+    const entries: IndexEntry[] = [
+      { symbol: "Svc", kind: "class", filePath: "Svc.cs", baseTypes: ["IDisposable"] },
+    ];
+    computeRefCounts(entries);
+    expect(entries[0]!.refCount).toBeUndefined();
+  });
+
+  it("does not set refCount on method entries", () => {
+    const entries: IndexEntry[] = [
+      { symbol: "Base", kind: "class", filePath: "Base.cs" },
+      { symbol: "Child", kind: "class", filePath: "Child.cs", baseTypes: ["Base"] },
+      { symbol: "Run", kind: "method", parentType: "Base", filePath: "Base.cs" },
+    ];
+    computeRefCounts(entries);
+    expect(entries[0]!.refCount).toBe(1);
+    expect(entries[2]!.refCount).toBeUndefined();
+  });
+
+  it("skips self-references", () => {
+    const entries: IndexEntry[] = [
+      { symbol: "Weird", kind: "class", filePath: "Weird.cs", baseTypes: ["Weird"] },
+    ];
+    computeRefCounts(entries);
+    expect(entries[0]!.refCount).toBeUndefined();
+  });
+});
+
+// ── serializeIndex / parseIndex — refCount ──
+
+describe("serializeIndex / parseIndex — refCount", () => {
+  it("round-trips entry with refCount only", () => {
+    const entries: IndexEntry[] = [
+      { symbol: "Base", kind: "class", filePath: "Base.cs", refCount: 5 },
+    ];
+    const raw = serializeIndex(entries);
+    const parsed = parseIndex(raw);
+    expect(parsed[0]!.refCount).toBe(5);
+  });
+
+  it("round-trips entry with all optional fields and refCount", () => {
+    const entries: IndexEntry[] = [
+      {
+        symbol: "Entity", kind: "class", filePath: "Entity.cs",
+        baseTypes: ["IEntity"], generics: "<TId>", modifiers: "abstract", refCount: 3,
+      },
+    ];
+    const raw = serializeIndex(entries);
+    const parsed = parseIndex(raw);
+    expect(parsed[0]!.baseTypes).toEqual(["IEntity"]);
+    expect(parsed[0]!.generics).toBe("<TId>");
+    expect(parsed[0]!.modifiers).toBe("abstract");
+    expect(parsed[0]!.refCount).toBe(3);
+  });
+
+  it("does not serialize refCount of 0 or undefined", () => {
+    const entries: IndexEntry[] = [
+      { symbol: "Plain", kind: "class", filePath: "Plain.cs" },
+      { symbol: "Zero", kind: "class", filePath: "Zero.cs", refCount: 0 },
+    ];
+    const raw = serializeIndex(entries);
+    expect(raw).toBe("Plain|class|Plain.cs\nZero|class|Zero.cs");
+  });
+
+  it("parses old 3-6 field format without refCount", () => {
+    const raw = [
+      "Foo|class|Foo.cs",
+      "Bar|class|Bar.cs|IBar",
+      "Baz|class|Baz.cs|IBaz|<T>|sealed",
+    ].join("\n");
+    const parsed = parseIndex(raw);
+    expect(parsed[0]!.refCount).toBeUndefined();
+    expect(parsed[1]!.refCount).toBeUndefined();
+    expect(parsed[2]!.refCount).toBeUndefined();
+  });
+
+  it("handles invalid refCount values gracefully", () => {
+    const raw = "Foo|class|Foo.cs||||NaN\nBar|class|Bar.cs||||-1";
+    const parsed = parseIndex(raw);
+    expect(parsed[0]!.refCount).toBeUndefined();
+    expect(parsed[1]!.refCount).toBeUndefined();
+  });
+
+  it("method entries are unaffected by refCount serialization", () => {
+    const entries: IndexEntry[] = [
+      { symbol: "Base", kind: "class", filePath: "Base.cs", refCount: 2 },
+      { symbol: "Run", kind: "method", parentType: "Base", filePath: "Base.cs" },
+    ];
+    const raw = serializeIndex(entries);
+    const parsed = parseIndex(raw);
+    expect(parsed[0]!.refCount).toBe(2);
+    expect(parsed[1]!.kind).toBe("method");
+    expect(parsed[1]!.refCount).toBeUndefined();
+  });
+});
+
+// ── extractIndex — refCount integration ──
+
+describe("extractIndex — refCount", () => {
+  it("sets refCount on types referenced as base types", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/MyLib/IService.cs": [
+        "namespace MyLib;",
+        "public interface IService",
+        "{",
+        "    void Execute();",
+        "}",
+      ].join("\n"),
+      "src/MyLib/SvcA.cs": [
+        "namespace MyLib;",
+        "public class SvcA : IService",
+        "{",
+        "    public void Execute() { }",
+        "}",
+      ].join("\n"),
+      "src/MyLib/SvcB.cs": [
+        "namespace MyLib;",
+        "public class SvcB : IService",
+        "{",
+        "    public void Execute() { }",
+        "}",
+      ].join("\n"),
+    });
+
+    const pkg = makePkg("MyLib", "src/MyLib");
+    const entries = await extractIndex(repoDir, pkg);
+
+    const iservice = entries.find((e) => e.symbol === "IService");
+    expect(iservice?.refCount).toBe(2);
+
+    const svcA = entries.find((e) => e.symbol === "SvcA");
+    expect(svcA?.refCount).toBeUndefined();
   });
 });
