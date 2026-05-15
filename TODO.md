@@ -152,3 +152,26 @@
 | # | Task | Priority | Status | Commit | Rationale | Files |
 |---|------|----------|--------|--------|-----------|-------|
 | 1 | Graceful unconfigured mode + `dig_init` bootstrapping tool | P1 | done | a29f7b9 | Server crashes with exit 1 when no `.digger/config.json` exists, making MCP unavailable. Logger creates `.digger/` as side effect. **Fix:** `loadConfig()` returns null on ENOENT, server starts in unconfigured mode with only `dig_status` + `dig_init` registered. No directories created. `dig_init` creates starter config with atomic write. | `src/config.ts`, `src/index.ts`, `src/logger.ts`, `src/tools/digStatus.ts`, `src/tools/digInit.ts`, `src/tools/digInit.test.ts` |
+
+---
+
+## Phase 10 — V1 Release Hardening
+
+> Findings from senior-dev code review (2026-05-15). Four parallel review agents audited: core infrastructure, C# parser, tool modules, and release readiness.
+
+| # | Task | Priority | Status | Commit | Rationale | Files |
+|---|------|----------|--------|--------|-----------|-------|
+| 1 | Add crash protection to entry point | P1 | — | | No `process.on("uncaughtException")` / `process.on("unhandledRejection")` handlers. Top-level `await server.connect(transport)` at line 66 has no try-catch. Unhandled rejection post-connect kills process silently — MCP client gets no error. **Fix:** wrap connect in try-catch, add global crash handlers that log to stderr + error.log. | `src/index.ts` |
+| 2 | Wrap `parseIndex` in stale-fallback error handlers | P1 | — | | `parseIndex()` called inside catch blocks without its own try-catch. Corrupted cached `index.dat` → parseIndex throws → error handler crashes → violates tools-never-throw pattern. **Fix:** wrap `parseIndex()` calls in try-catch within each fallback handler. | `src/tools/digLookup.ts`, `src/tools/digSignatures.ts` |
+| 3 | Add graceful shutdown handlers | P2 | — | | No SIGINT/SIGTERM handling. Pending git operations or file writes interrupted without cleanup. MCP SDK has `server.close()`. **Fix:** add signal handlers calling `server.close()` then `process.exit(0)`. | `src/index.ts` |
+| 4 | Add `prepublishOnly` script | P2 | — | | `npm publish` without prior build ships stale `dist/`. **Fix:** add `"prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build"`. | `package.json` |
+| 5 | Bump version to 1.0.0 | P2 | — | | Version still `0.7.0` in package.json and LICENSE. | `package.json`, `LICENSE` |
+| 6 | Fix GitError exit code capture | P3 | — | | `gitClient.ts:48-50` accesses `e.status` which doesn't exist on `ExecFileException`. Should use `e.code`. `exitCode` on `GitError` is always null. **Fix:** `typeof e.code === "number" ? e.code : null`. | `src/gitClient.ts` |
+| 7 | Propagate raw string state in forward-looking scan | P3 | — | | `sourceExtractor.ts:657` — `analyzeLine(next, fwdInBC, fwdInVerbatim)` omits `startsInRawString` / `rawQuoteCount`. Base-type parsing breaks if type declaration spans into raw string continuation. **Fix:** pass `fwdInRawString` and `fwdRawQuoteCount`. | `src/sourceExtractor.ts` |
+| 8 | Strip raw strings in `parseBaseTypes` | P3 | — | | `sourceExtractor.ts:673` — only strips block comments, not raw string content. Braces inside `"""..."""` corrupt base-type parsing. **Fix:** strip raw strings before passing to `parseBaseTypes`. | `src/sourceExtractor.ts` |
+| 9 | Run `npm audit fix` for transitive vulnerabilities | P3 | — | | 5 vulnerabilities (1 high: `fast-uri` path traversal via MCP SDK → ajv, 4 moderate). Dev-only `postcss` vuln doesn't ship. | `package.json` |
+| 10 | Add tests for `index.ts` and `tools/shared.ts` | P4 | — | | Entry point startup logic and 9 shared helpers untested directly. Edge cases (unconfigured mode, malformed config) not isolated. | `src/index.ts`, `src/tools/shared.ts` |
+| 11 | Use `Promise.allSettled` in cache invalidation | P5 | — | | `cacheManager.ts:90` — `Promise.all` on `fs.rm()` calls; one failure aborts rest. | `src/cacheManager.ts` |
+| 12 | Update README tool count (8 → 10) | P5 | — | | Missing `dig_init` and `dig_refresh` in tool table. | `README.md` |
+| 13 | Add `CHANGELOG.md` for v1 release | P5 | — | | No changelog exists. Users expect release notes. | `CHANGELOG.md` |
+| 14 | Add `Array.isArray(repos)` guard in config parsing | P5 | — | | `config.ts:365` — no explicit check before iterating `repos`. | `src/config.ts` |
