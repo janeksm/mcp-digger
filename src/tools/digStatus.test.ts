@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { GitAuth } from "../config.js";
+import { markFresh, writeIndex } from "../cacheManager.js";
 import {
   createBareRepo,
   initRepo,
@@ -14,7 +15,7 @@ import {
   writeCsprojFile,
   writeSlnFile,
 } from "../testHelpers.js";
-import { digStatus } from "./digStatus.js";
+import { digStatus, formatCacheAge } from "./digStatus.js";
 
 // ── Test helpers ──
 
@@ -338,5 +339,206 @@ describe("repo info display", () => {
     const result = await digStatus(config);
 
     expect(result).not.toContain("Branch:**");
+  });
+});
+
+// ── Index stats ──
+
+describe("index stats", () => {
+  it("shows 'not yet built' when no meta or index cache exists", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("not yet built");
+    expect(result).toContain("dig_lookup");
+  });
+
+  it("shows cache age and commit when meta exists but no index", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    await markFresh(cacheDir, "myrepo", "abcdef1234567890abcdef1234567890abcdef12");
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("no packages indexed");
+    expect(result).toContain("Commit:** abcdef1");
+    expect(result).toContain("Cache:");
+  });
+
+  it("shows file count, types, and methods from index data", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    await markFresh(cacheDir, "myrepo", "abcdef1234567890abcdef1234567890abcdef12");
+    await writeIndex(pkg, [
+      "MyClass|class|Services/MyClass.cs",
+      "IMyService|interface|Interfaces/IMyService.cs",
+      "DoWork|method|MyClass|Services/MyClass.cs",
+      "Execute|method|MyClass|Services/MyClass.cs",
+    ].join("\n"));
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("Index:** 2 files");
+    expect(result).toContain("2 types");
+    expect(result).toContain("2 methods");
+    expect(result).toContain("Commit:** abcdef1");
+  });
+
+  it("aggregates stats across multiple packages", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Core/A.cs": "namespace Core;",
+      "src/Web/B.cs": "namespace Web;",
+    });
+
+    const pkg1 = makePkg("Core", "myrepo", "src", cacheDir);
+    const pkg2 = makePkg("Web", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg1, pkg2], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    await markFresh(cacheDir, "myrepo", "abcdef1234567890abcdef1234567890abcdef12");
+    await writeIndex(pkg1, "Entity|class|Entity.cs\nGetById|method|Entity|Entity.cs");
+    await writeIndex(pkg2, "Controller|class|Controller.cs\nIndex|method|Controller|Controller.cs\nCreate|method|Controller|Controller.cs");
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("Index:** 2 files");
+    expect(result).toContain("2 types");
+    expect(result).toContain("3 methods");
+  });
+
+  it("counts unique files when multiple symbols share one file", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    await markFresh(cacheDir, "myrepo", "abcdef1234567890abcdef1234567890abcdef12");
+    await writeIndex(pkg, [
+      "MyClass|class|Same.cs",
+      "DoA|method|MyClass|Same.cs",
+      "DoB|method|MyClass|Same.cs",
+      "DoC|method|MyClass|Same.cs",
+    ].join("\n"));
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("Index:** 1 file");
+    expect(result).toContain("1 type");
+    expect(result).toContain("3 methods");
+  });
+
+  it("reports missing packages when only some have index data", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Core/A.cs": "namespace Core;",
+      "src/Web/B.cs": "namespace Web;",
+    });
+
+    const pkg1 = makePkg("Core", "myrepo", "src", cacheDir);
+    const pkg2 = makePkg("Web", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg1, pkg2], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    await markFresh(cacheDir, "myrepo", "abcdef1234567890abcdef1234567890abcdef12");
+    await writeIndex(pkg1, "Entity|class|Entity.cs");
+    // pkg2 has no index
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("Index:** 1 file");
+    expect(result).toContain("Index coverage:** 1/2 packages indexed");
+    expect(result).toContain("missing: Web");
+  });
+
+  it("counts files separately across packages with same relative path", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Core/A.cs": "namespace Core;",
+      "src/Web/A.cs": "namespace Web;",
+    });
+
+    const pkg1 = makePkg("Core", "myrepo", "src", cacheDir);
+    const pkg2 = makePkg("Web", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg1, pkg2], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    await markFresh(cacheDir, "myrepo", "abcdef1234567890abcdef1234567890abcdef12");
+    await writeIndex(pkg1, "CoreClass|class|Shared.cs");
+    await writeIndex(pkg2, "WebClass|class|Shared.cs");
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("Index:** 2 files");
+  });
+
+  it("shows 'not yet discovered' for auto repos with 0 packages", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "content" });
+
+    const repo = makeLocalRepo("myrepo", repoDir, [], tmpDir);
+    repo.discoveryMode = "auto";
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("not yet discovered");
+  });
+});
+
+// ── formatCacheAge ──
+
+describe("formatCacheAge", () => {
+  it("formats seconds as '< 1m'", () => {
+    const now = new Date("2026-05-15T12:00:00Z");
+    expect(formatCacheAge("2026-05-15T11:59:30Z", now)).toBe("< 1m");
+  });
+
+  it("formats minutes", () => {
+    const now = new Date("2026-05-15T12:00:00Z");
+    expect(formatCacheAge("2026-05-15T11:45:00Z", now)).toBe("15m");
+  });
+
+  it("formats hours and minutes", () => {
+    const now = new Date("2026-05-15T12:00:00Z");
+    expect(formatCacheAge("2026-05-15T09:46:00Z", now)).toBe("2h 14m");
+  });
+
+  it("formats days and hours", () => {
+    const now = new Date("2026-05-15T12:00:00Z");
+    expect(formatCacheAge("2026-05-12T10:00:00Z", now)).toBe("3d 2h");
+  });
+
+  it("returns 'unknown' for empty string", () => {
+    const now = new Date("2026-05-15T12:00:00Z");
+    expect(formatCacheAge("", now)).toBe("unknown");
+  });
+
+  it("returns 'unknown' for invalid date", () => {
+    const now = new Date("2026-05-15T12:00:00Z");
+    expect(formatCacheAge("not-a-date", now)).toBe("unknown");
+  });
+
+  it("clamps future dates to '< 1m'", () => {
+    const now = new Date("2026-05-15T12:00:00Z");
+    expect(formatCacheAge("2026-05-15T13:00:00Z", now)).toBe("< 1m");
   });
 });

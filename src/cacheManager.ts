@@ -5,7 +5,7 @@ import { debug } from "./logger.js";
 
 // ── Meta file schema ──
 
-interface RepoMeta {
+export interface RepoMeta {
   commitHash: string;
   updatedAt: string; // ISO 8601
 }
@@ -35,14 +35,23 @@ export async function isFresh(
 }
 
 /**
+ * Read the cached repo metadata (commit hash + updatedAt). Returns undefined if no cache exists.
+ */
+export async function readRepoMeta(
+  cacheDir: string,
+  repoName: string,
+): Promise<RepoMeta | undefined> {
+  return readMeta(cacheDir, repoName);
+}
+
+/**
  * Read the cached commit hash for a repo. Returns undefined if no cache exists.
  */
 export async function readCachedHash(
   cacheDir: string,
   repoName: string,
 ): Promise<string | undefined> {
-  const meta = await readMeta(cacheDir, repoName);
-  return meta?.commitHash;
+  return (await readRepoMeta(cacheDir, repoName))?.commitHash;
 }
 
 /**

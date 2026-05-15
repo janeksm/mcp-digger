@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { readIndex, readRepoMeta } from "../cacheManager.js";
 import { filterPrefix, type DiggerConfig, type GitAuth, type RepoConfig } from "../config.js";
-import { TOOL_ANNOTATIONS, extractErrorMessage } from "./shared.js";
 import * as gitClient from "../gitClient.js";
 import type { LsRemoteResult } from "../gitClient.js";
 import { debug, error } from "../logger.js";
@@ -12,6 +12,8 @@ import {
   writeScanCache,
   type ScanResult,
 } from "../solutionScanner.js";
+import { parseIndex } from "../sourceExtractor.js";
+import { TOOL_ANNOTATIONS, extractErrorMessage } from "./shared.js";
 
 // ── Tool description (shown to Claude Code) ──
 
@@ -190,6 +192,9 @@ export async function digStatus(config: DiggerConfig | null): Promise<string> {
       }
     }
 
+    // Index stats
+    sections.push(...await formatIndexStats(config.cacheDir, repo));
+
     if (repoIssues.length > 0) {
       issueCount++;
     }
@@ -306,6 +311,88 @@ function formatConnectivityResult(
   }
 
   return lines;
+}
+
+async function formatIndexStats(cacheDir: string, repo: RepoConfig): Promise<string[]> {
+  if (repo.packages.length === 0) {
+    if (repo.discoveryMode === "auto") {
+      return [`- **Index:** not yet discovered — use a dig tool to trigger package discovery and indexing`];
+    }
+    return [];
+  }
+
+  try {
+    const meta = await readRepoMeta(cacheDir, repo.name);
+    if (!meta) {
+      return [`- **Index:** not yet built — run dig_lookup or dig_signatures to trigger indexing`];
+    }
+
+    const files = new Set<string>();
+    let types = 0;
+    let methods = 0;
+    let indexedPkgCount = 0;
+    const missingPkgs: string[] = [];
+
+    for (const pkg of repo.packages) {
+      const raw = await readIndex(pkg);
+      if (raw === undefined) {
+        missingPkgs.push(pkg.name);
+        continue;
+      }
+      indexedPkgCount++;
+      for (const entry of parseIndex(raw)) {
+        files.add(`${pkg.name}/${entry.filePath}`);
+        if (entry.kind === "method") {
+          methods++;
+        } else {
+          types++;
+        }
+      }
+    }
+
+    const lines: string[] = [];
+    const age = formatCacheAge(meta.updatedAt);
+    const shortHash = meta.commitHash.slice(0, 7);
+
+    if (indexedPkgCount === 0) {
+      lines.push(`- **Index:** no packages indexed yet`);
+    } else {
+      const fileLabel = files.size === 1 ? "1 file" : `${files.size} files`;
+      const typeLabel = types === 1 ? "1 type" : `${types} types`;
+      const methodLabel = methods === 1 ? "1 method" : `${methods} methods`;
+      lines.push(`- **Index:** ${fileLabel} · ${typeLabel}, ${methodLabel}`);
+      if (missingPkgs.length > 0) {
+        lines.push(`- **Index coverage:** ${indexedPkgCount}/${repo.packages.length} packages indexed; missing: ${missingPkgs.join(", ")}`);
+      }
+    }
+    lines.push(`- **Cache:** ${age} old · **Commit:** ${shortHash}`);
+
+    return lines;
+  } catch (err) {
+    const msg = extractErrorMessage(err);
+    error("digStatus", `index stats for '${repo.name}' failed:`, msg);
+    return [`- **Index:** unavailable (${msg})`];
+  }
+}
+
+export function formatCacheAge(isoDate: string, now: Date = new Date()): string {
+  if (!isoDate) return "unknown";
+  const date = new Date(isoDate);
+  if (isNaN(date.getTime())) return "unknown";
+
+  const diffMs = now.getTime() - date.getTime();
+  if (diffMs < 0) return "< 1m";
+
+  const totalMinutes = Math.floor(diffMs / 60_000);
+  if (totalMinutes < 1) return "< 1m";
+
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }
 
 function inferHint(

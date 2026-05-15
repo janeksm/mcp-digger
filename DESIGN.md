@@ -22,7 +22,7 @@
 
 **Purpose:** Validates config and tests git connectivity for all configured repos. Call first to diagnose setup issues before digging.
 
-**Output:** Markdown report with config summary (auth strategy, PAT status, repo count, warnings), workspace-scan summary (when any repo uses `packageFilter` — `.sln`/`.slnx`/`Directory.*.props`/`Directory.*.targets` counts, total referenced packages, cache file path), and per-repo checks (mode, branch when configured, discovery mode with filter + matching references, local path validation, remote connectivity via `git ls-remote`). Rich error context on failure: auth attempts made, exact error, actionable hints.
+**Output:** Markdown report with config summary (auth strategy, PAT status, repo count, warnings), workspace-scan summary (when any repo uses `packageFilter` — `.sln`/`.slnx`/`Directory.*.props`/`Directory.*.targets` counts, total referenced packages, cache file path), per-repo checks (mode, branch when configured, discovery mode with filter + matching references, local path validation, remote connectivity via `git ls-remote`), and per-repo index health stats (indexed file count, type/method symbol counts, cache age, cached commit hash — derived from cached `index.dat` and `meta.json` without additional git operations). Rich error context on failure: auth attempts made, exact error, actionable hints.
 
 ### `dig_list` — Discovery: Available Repos & Packages
 
