@@ -95,6 +95,39 @@ export function error(tag: string, ...args: unknown[]): void {
   }
 }
 
+/**
+ * Write a critical error line to BOTH stderr AND `.digger/error.log` (when initialized).
+ *
+ * Use for crash/signal handlers in the server entry point — stderr is the resilient
+ * channel visible to the MCP client and shell; `error.log` is additive persistence
+ * when available. File write is best-effort and never throws.
+ */
+export function criticalError(tag: string, ...args: unknown[]): void {
+  const line = formatLine(tag, args);
+  // Sync fd write: process.stderr.write is async on pipes and can be dropped
+  // by an immediate process.exit() in crash handlers.
+  try {
+    fs.writeSync(2, line);
+  } catch {
+    // Best-effort
+  }
+  // Also call process.stderr.write so wrapping streams (custom transports,
+  // test spies) can observe the line. Safe duplicate — this function only
+  // runs from crash/shutdown paths.
+  try {
+    process.stderr.write(line);
+  } catch {
+    // Best-effort
+  }
+  if (errorLogPath) {
+    try {
+      fs.appendFileSync(errorLogPath, line);
+    } catch {
+      // Best-effort
+    }
+  }
+}
+
 /** Check whether debug logging is currently active. */
 export function isDebugEnabled(): boolean {
   return initialized && enabled;

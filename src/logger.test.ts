@@ -182,3 +182,76 @@ describe("error()", () => {
     expect(content.length).toBeLessThan(1024);
   });
 });
+
+describe("criticalError()", () => {
+  it("writes to stderr before initLogger and does not create .digger", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const { criticalError } = await loadLogger();
+      criticalError("uncaughtException", "boom");
+
+      expect(stderrSpy).toHaveBeenCalledOnce();
+      const written = stderrSpy.mock.calls[0]![0] as string;
+      expect(written).toContain("[uncaughtException]");
+      expect(written).toContain("boom");
+
+      const diggerDir = path.join(tmpDir, ".digger");
+      expect(fs.existsSync(diggerDir)).toBe(false);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it("writes to BOTH stderr and error.log after initLogger", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const { criticalError, initLogger } = await loadLogger();
+      initLogger({ workspaceRoot: tmpDir, debug: false });
+
+      criticalError("shutdown", "signal SIGTERM");
+
+      const writes = stderrSpy.mock.calls.map((c) => c[0] as string);
+      const stderrLine = writes.find((w) => w.includes("[shutdown]") && w.includes("signal SIGTERM"));
+      expect(stderrLine).toBeDefined();
+
+      const fileContent = fs.readFileSync(errorLogPath(), "utf-8");
+      expect(fileContent).toContain("[shutdown]");
+      expect(fileContent).toContain("signal SIGTERM");
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it("formats line with ISO timestamp and bracketed tag", async () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const { criticalError } = await loadLogger();
+      criticalError("fmt", "check format");
+
+      const written = stderrSpy.mock.calls[0]![0] as string;
+      expect(written).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z \[fmt\] check format\n$/,
+      );
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it("does not throw when file write fails", async () => {
+    // Force appendFileSync to fail by pre-creating error.log as a directory.
+    fs.mkdirSync(path.join(tmpDir, ".digger", "error.log"), { recursive: true });
+
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const { criticalError, initLogger } = await loadLogger();
+      initLogger({ workspaceRoot: tmpDir, debug: false });
+
+      expect(() => criticalError("crash", "still alive")).not.toThrow();
+
+      const writes = stderrSpy.mock.calls.map((c) => c[0] as string);
+      expect(writes.some((w) => w.includes("[crash]") && w.includes("still alive"))).toBe(true);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+});
