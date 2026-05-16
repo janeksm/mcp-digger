@@ -1794,11 +1794,6 @@ describe("extractIndex — brace counting skips strings/chars/comments", () => {
     expect(entries.find((e) => e.symbol === "Span")?.baseTypes).toEqual(["IReal"]);
   });
 
-  it("comment-stripping regex handles newlines (defensive for future join changes)", () => {
-    const regex = /\/\*.*?\*\//gs;
-    expect("/* start\nend */ : IReal".replace(regex, "")).toBe(" : IReal");
-  });
-
   it("clears pendingType after multi-line block comment", async () => {
     const repoDir = await initRepo(tmpDir, {
       "src/Lib/Stale.cs": [
@@ -1870,6 +1865,96 @@ describe("extractIndex — brace counting skips strings/chars/comments", () => {
     const entries = await extractIndex(repoDir, pkg);
     expect(entries.find((e) => e.symbol === "Separate")?.kind).toBe("class");
     expect(entries.find((e) => e.symbol === "Work")?.parentType).toBe("Separate");
+  });
+
+  it("parses base types when primary-ctor default is a raw string containing braces", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Configured.cs": [
+        "namespace Lib;",
+        'public class Configured(string Json = """{"a":1}""") : IConfig',
+        "{",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Configured")?.baseTypes).toEqual(["IConfig"]);
+  });
+
+  it("parses base types when primary-ctor default is a verbatim string containing braces", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Configured.cs": [
+        "namespace Lib;",
+        'public class Configured(string Json = @"{ a }") : IConfig',
+        "{",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Configured")?.baseTypes).toEqual(["IConfig"]);
+  });
+
+  it("parses base types when primary-ctor default is a regular string containing braces", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Configured.cs": [
+        "namespace Lib;",
+        'public class Configured(string Json = "{a}") : IConfig',
+        "{",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Configured")?.baseTypes).toEqual(["IConfig"]);
+  });
+
+  it("forward scan does not join lines that started inside a verbatim string", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Foo.cs": [
+        "namespace Lib;",
+        "public class Foo(string Path = @\"C:\\some\\path\")",
+        "    : IFoo",
+        "{",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Foo")?.kind).toBe("class");
+    expect(entries.find((e) => e.symbol === "Foo")?.baseTypes).toEqual(["IFoo"]);
+  });
+
+  it("forward scan tracks raw-string state across continuation lines", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Raw.cs": [
+        "namespace Lib;",
+        'public class Raw(string Json = """',
+        "    { inside }",
+        '    """) : IRaw',
+        "{",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Raw")?.kind).toBe("class");
+    expect(entries.find((e) => e.symbol === "Raw")?.baseTypes).toEqual(["IRaw"]);
+    expect(entries.find((e) => e.symbol === "inside")).toBeUndefined();
+  });
+
+  it("strips line comments from base type clause", async () => {
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Commented.cs": [
+        "namespace Lib;",
+        "public class Commented : IReal // : IFake",
+        "{",
+        "}",
+      ].join("\n"),
+    });
+    const pkg = makePkg("Lib", "src/Lib");
+    const entries = await extractIndex(repoDir, pkg);
+    expect(entries.find((e) => e.symbol === "Commented")?.baseTypes).toEqual(["IReal"]);
   });
 });
 

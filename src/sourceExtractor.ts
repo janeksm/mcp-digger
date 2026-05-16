@@ -585,6 +585,97 @@ function analyzeLine(
   };
 }
 
+interface StripState {
+  inBlockComment: boolean;
+  inVerbatim: boolean;
+  inRawString: boolean;
+  rawQuoteCount: number;
+}
+
+const INITIAL_STRIP_STATE: StripState = {
+  inBlockComment: false,
+  inVerbatim: false,
+  inRawString: false,
+  rawQuoteCount: 0,
+};
+
+function stripStringsAndComments(
+  text: string,
+  state: StripState = INITIAL_STRIP_STATE,
+): { stripped: string; state: StripState } {
+  let result = "";
+  let i = 0;
+  let inBC = state.inBlockComment;
+  let inStr = false;
+  let inVerbatim = state.inVerbatim;
+  let inRawString = state.inRawString;
+  let rawQuoteCount = state.rawQuoteCount;
+
+  while (i < text.length) {
+    const ch = text[i]!;
+    const next = i + 1 < text.length ? text[i + 1]! : "";
+
+    if (inBC) {
+      if (ch === "*" && next === "/") { inBC = false; i += 2; continue; }
+      i++; continue;
+    }
+    if (inRawString) {
+      if (ch === '"') {
+        let count = 1;
+        while (i + count < text.length && text[i + count] === '"') count++;
+        if (count >= rawQuoteCount) {
+          inRawString = false;
+          i += rawQuoteCount;
+        } else {
+          i += count;
+        }
+        continue;
+      }
+      i++; continue;
+    }
+    if (inVerbatim) {
+      if (ch === '"') {
+        if (next === '"') { i += 2; continue; }
+        inVerbatim = false;
+      }
+      i++; continue;
+    }
+    if (inStr) {
+      if (ch === "\\") { i += 2; continue; }
+      if (ch === '"') inStr = false;
+      i++; continue;
+    }
+
+    if (ch === "/" && next === "/") break;
+    if (ch === "/" && next === "*") { inBC = true; i += 2; continue; }
+    if (ch === '"') {
+      const prev = i > 0 ? text[i - 1]! : "";
+      const prevPrev = i > 1 ? text[i - 2]! : "";
+      const isVerbatimPrefix = prev === "@" || (prev === "$" && prevPrev === "@");
+      let quoteCount = 1;
+      while (i + quoteCount < text.length && text[i + quoteCount] === '"') quoteCount++;
+      if (quoteCount >= 3 && !isVerbatimPrefix) {
+        inRawString = true;
+        rawQuoteCount = quoteCount;
+        i += quoteCount;
+        continue;
+      }
+      if (isVerbatimPrefix) inVerbatim = true;
+      else inStr = true;
+      i++;
+      continue;
+    }
+
+    result += ch;
+    i++;
+  }
+
+  return {
+    stripped: result,
+    state: { inBlockComment: inBC, inVerbatim, inRawString, rawQuoteCount },
+  };
+}
+
 function isTypeDecl(context: string): boolean {
   return TYPE_KEYWORDS_RE.test(context);
 }
@@ -648,18 +739,27 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
       const typeKind = typeMatch[1] as IndexEntry["kind"];
       const name = typeMatch[2]!;
 
-      let fullDecl = trimmed.slice(typeMatch.index + typeMatch[0].length);
+      const initialChunk = trimmed.slice(typeMatch.index + typeMatch[0].length);
+      const initialStrip = stripStringsAndComments(initialChunk);
+      let fullDecl = initialStrip.stripped;
+      let stripState = initialStrip.state;
       if (opens === 0 && !trimmed.includes(";")) {
         let fwdInBC = analysis.endsInComment;
         let fwdInVerbatim = analysis.endsInVerbatim;
+        let fwdInRawString = analysis.endsInRawString;
+        let fwdRawQuoteCount = analysis.rawQuoteCount;
         for (let j = i + 1; j < lines.length && j <= i + 5; j++) {
           const next = lines[j]!.trim();
-          const fwdAnalysis = analyzeLine(next, fwdInBC, fwdInVerbatim);
+          const fwdAnalysis = analyzeLine(next, fwdInBC, fwdInVerbatim, fwdInRawString, fwdRawQuoteCount);
           const wasFwdInBC = fwdInBC;
           fwdInBC = fwdAnalysis.endsInComment;
           fwdInVerbatim = fwdAnalysis.endsInVerbatim;
+          fwdInRawString = fwdAnalysis.endsInRawString;
+          fwdRawQuoteCount = fwdAnalysis.rawQuoteCount;
           if (isNonCodeLine(next, wasFwdInBC, fwdAnalysis.endsInComment)) continue;
-          fullDecl += " " + next;
+          const lineStrip = stripStringsAndComments(next, stripState);
+          fullDecl += " " + lineStrip.stripped;
+          stripState = lineStrip.state;
           if (fwdAnalysis.opens > 0 || next.includes(";")) break;
         }
       }
@@ -670,7 +770,7 @@ function scanFileForIndex(source: string, relPath: string): IndexEntry[] {
       const beforeKeyword = trimmed.slice(0, typeMatch.index + typeMatch[0].indexOf(typeKind));
       const modifiers = extractModifiers(beforeKeyword);
 
-      const baseTypes = parseBaseTypes(fullDecl.replace(/\/\*.*?\*\//gs, ""));
+      const baseTypes = parseBaseTypes(fullDecl);
       const entry: IndexEntry = { symbol: name, kind: typeKind, filePath: relPath };
       if (baseTypes.length > 0) entry.baseTypes = baseTypes;
       if (generics) entry.generics = generics;
