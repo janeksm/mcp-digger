@@ -88,10 +88,11 @@ Ask the user to confirm before committing. Do NOT commit automatically.
 ### 7. Commit
 
 After user confirms:
-- `git add .`
-- Commit message: Notes column from TODO.md prefixed with conventional type and step — e.g. `feat: dig_status MCP tool, lsRemote() connectivity check (step 15)`. One line, no body.
-- No Co-Authored-By or AI attribution (per project rules).
-- Update the commit hash in TODO.md after commit, then `git add TODO.md` and create a new commit (`chore: update TODO hash for <step>`) — never `--amend`, never chain `add && commit`.
+- `git add .` to stage the step changes (TODO.md with `PENDING` placeholder in commit-hash column).
+- Run `git commit -m "<type>: <message>"` separately. Conventional type + step — e.g. `feat: dig_status MCP tool, lsRemote() connectivity check (step 15)`. One line, no body. No Co-Authored-By or AI attribution (per project rules).
+- Capture the new hash: `git rev-parse --short HEAD`.
+- Replace `PENDING` in TODO.md with the captured short hash.
+- `git add TODO.md` then `git commit --amend --no-edit` (separate commands). Amend is used here only to fold the hash backfill into the same step commit — never create a separate `chore: update TODO hash` commit, never amend pushed commits.
 
 ### 8. Write handoff and report (CMCM)
 
