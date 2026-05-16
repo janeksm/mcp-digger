@@ -1,13 +1,14 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   isFresh,
   markFresh,
   readIndex,
   writeIndex,
 } from "../cacheManager.js";
+import * as sourceExtractor from "../sourceExtractor.js";
 import {
   getHeadHash,
   initRepo,
@@ -18,6 +19,14 @@ import {
   makeWildcardRepo,
 } from "../testHelpers.js";
 import { digLookup } from "./digLookup.js";
+
+vi.mock("../sourceExtractor.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../sourceExtractor.js")>();
+  return {
+    ...actual,
+    parseIndex: vi.fn(actual.parseIndex),
+  };
+});
 
 // C# source fragments for cross-package tests
 const CS_INTERFACE = (ns: string, name: string) =>
@@ -952,5 +961,108 @@ describe("result ranking", () => {
     const zetaIdx = lines.findIndex((l: string) => l.includes("ZetaHandler"));
     const alphaIdx = lines.findIndex((l: string) => l.includes("AlphaHandler"));
     expect(zetaIdx).toBeLessThan(alphaIdx);
+  });
+});
+
+// ── Stale-fallback defensive guards ──
+
+describe("digLookup — corrupt stale index", () => {
+  let realParseIndex: typeof sourceExtractor.parseIndex;
+
+  beforeEach(async () => {
+    const actual = await vi.importActual<typeof import("../sourceExtractor.js")>(
+      "../sourceExtractor.js",
+    );
+    realParseIndex = actual.parseIndex;
+    vi.mocked(sourceExtractor.parseIndex).mockImplementation(realParseIndex);
+  });
+
+  afterEach(() => {
+    vi.mocked(sourceExtractor.parseIndex).mockImplementation(realParseIndex);
+  });
+
+  it("symbol mode: returns tool error (no throw) when stale parseIndex throws", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const pkg = makePkg("StaleLib", "gonerepo", "src", cacheDir);
+    await writeIndex(pkg, "OldType|class|Old.cs");
+
+    const repo = makeRepoConfig(
+      {
+        name: "gonerepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkg],
+      },
+      tmpDir,
+    );
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    vi.mocked(sourceExtractor.parseIndex).mockImplementationOnce(() => {
+      throw new Error("corrupt index");
+    });
+
+    const result = await digLookup(config, "StaleLib", "OldType");
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("Source unavailable");
+  });
+
+  it("implements mode: returns tool error (no throw) when stale parseIndex throws", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const pkg = makePkg("StaleLib", "gonerepo", "src", cacheDir);
+    await writeIndex(pkg, "Impl|class|Impl.cs|IThing");
+
+    const repo = makeRepoConfig(
+      {
+        name: "gonerepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkg],
+      },
+      tmpDir,
+    );
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    vi.mocked(sourceExtractor.parseIndex).mockImplementationOnce(() => {
+      throw new Error("corrupt index");
+    });
+
+    const result = await digLookup(
+      config,
+      "StaleLib",
+      "IThing",
+      "implements",
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("Source unavailable");
+  });
+
+  it("cross-package: skips corrupt stale package, returns valid stale match from sibling", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const pkgGood = makePkg("GoodLib", "gonerepo", "src/Good", cacheDir);
+    const pkgBad = makePkg("BadLib", "gonerepo", "src/Bad", cacheDir);
+    await writeIndex(pkgGood, "GoodType|class|Good.cs");
+    await writeIndex(pkgBad, "BadType|class|Bad.cs");
+
+    const repo = makeRepoConfig(
+      {
+        name: "gonerepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkgGood, pkgBad],
+      },
+      tmpDir,
+    );
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    vi.mocked(sourceExtractor.parseIndex).mockImplementation((raw: string) => {
+      if (raw.includes("BadType")) {
+        throw new Error("corrupt index for BadLib");
+      }
+      return realParseIndex(raw);
+    });
+
+    const result = await digLookup(config, undefined, "Type");
+
+    expect(result.text).toContain("GoodType");
+    expect(result.text).not.toContain("BadType");
   });
 });

@@ -311,6 +311,18 @@ describe("GitError", () => {
       expect(gitErr.stderr).toBeDefined();
     }
   });
+
+  it("captures numeric exit code from ExecFileException.code", async () => {
+    const repoDir = await createRepo({ "file.txt": "x" });
+
+    try {
+      await revParse(repoDir, "DOES_NOT_EXIST");
+      expect.fail("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(GitError);
+      expect(typeof (err as GitError).exitCode).toBe("number");
+    }
+  });
 });
 
 // ── PAT redaction on clone/fetch errors ──

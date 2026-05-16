@@ -87,7 +87,7 @@ export async function invalidate(
   const metaPath = metaFilePath(cacheDir, repoName);
   await fs.promises.rm(metaPath, { force: true });
 
-  await Promise.all(
+  await Promise.allSettled(
     packages
       .filter((p) => p.repoName === repoName)
       .map((p) => fs.promises.rm(p.cachePath, { recursive: true, force: true })),

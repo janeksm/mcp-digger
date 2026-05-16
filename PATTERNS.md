@@ -35,7 +35,7 @@ Examples: all src/tools/*.ts, src/tools/shared.ts
 ## tool-error-with-fallback
 
 When: A tool cannot reach the repo (network failure, missing local path) but has cached data
-Shape: Attempt fresh extraction → on failure, read stale cache artifact → if stale results exist, return them with a warning disclaimer → otherwise return `toolError()`
+Shape: Attempt fresh extraction → on failure, read stale cache artifact → if stale results exist, return them with a warning disclaimer → otherwise return `toolError()`. Wrap stale parse/search in its own inner try-catch — corrupt cache artifacts must not throw past the tool boundary (violates [[tools-never-throw]]). On parse failure, log and fall through to the `toolError()` exit.
 Examples: src/tools/digPackageOverview.ts, src/tools/digLookup.ts (symbol/implements modes), src/tools/digSignatures.ts
 
 ## sequential-repo-processing

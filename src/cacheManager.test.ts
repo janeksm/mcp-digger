@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PackageConfig } from "./config.js";
 import {
   invalidate,
@@ -154,6 +154,41 @@ describe("invalidate", () => {
 
     // Should not throw
     await invalidate(cacheDir, "myrepo", [pkg]);
+  });
+
+  it("attempts all package deletes when one delete fails", async () => {
+    const pkg1 = makePkg("PkgA");
+    const pkg2 = makePkg("PkgB");
+    const pkg3 = makePkg("PkgC");
+    await markFresh(cacheDir, "myrepo", "abc");
+    await writeOverview(pkg1, "# A");
+    await writeOverview(pkg2, "# B");
+    await writeOverview(pkg3, "# C");
+
+    const realRm = fs.promises.rm.bind(fs.promises);
+    const attempts: string[] = [];
+    const rmSpy = vi
+      .spyOn(fs.promises, "rm")
+      .mockImplementation(async (target, opts) => {
+        const targetStr = String(target);
+        attempts.push(targetStr);
+        if (targetStr === pkg2.cachePath) {
+          throw new Error("simulated rm failure");
+        }
+        return realRm(target, opts);
+      });
+
+    try {
+      await expect(
+        invalidate(cacheDir, "myrepo", [pkg1, pkg2, pkg3]),
+      ).resolves.toBeUndefined();
+    } finally {
+      rmSpy.mockRestore();
+    }
+
+    expect(attempts).toContain(pkg1.cachePath);
+    expect(attempts).toContain(pkg2.cachePath);
+    expect(attempts).toContain(pkg3.cachePath);
   });
 });
 

@@ -123,12 +123,20 @@ export async function digLookup(
       error("digLookup", `package '${packageName}':`, msg);
       const stale = await readIndex(pkg);
       if (stale) {
-        const entries = parseIndex(stale);
-        const matches = searchIndex(entries, keyword);
-        if (matches.length > 0) {
-          return toolSuccess(
-            formatMatches(packageName, keyword, matches) +
-            `\n\n---\n\n> **Warning:** Index may be stale. ${msg}`,
+        try {
+          const entries = parseIndex(stale);
+          const matches = searchIndex(entries, keyword);
+          if (matches.length > 0) {
+            return toolSuccess(
+              formatMatches(packageName, keyword, matches) +
+              `\n\n---\n\n> **Warning:** Index may be stale. ${msg}`,
+            );
+          }
+        } catch (parseErr) {
+          error(
+            "digLookup",
+            `stale index parse failed for '${packageName}':`,
+            extractErrorMessage(parseErr),
           );
         }
       }
@@ -390,12 +398,19 @@ async function collectStaleResults(
 ): Promise<void> {
   for (const pkg of packages) {
     const stale = await readIndex(pkg);
-    if (stale) {
+    if (!stale) continue;
+    try {
       const entries = parseIndex(stale);
       const pkgMatches = searchFn(entries, keyword);
       if (pkgMatches.length > 0) {
         results.push({ packageName: pkg.name, matches: pkgMatches });
       }
+    } catch (parseErr) {
+      error(
+        "digLookup",
+        `stale index parse failed for '${pkg.name}':`,
+        extractErrorMessage(parseErr),
+      );
     }
   }
 }
@@ -490,12 +505,20 @@ async function digLookupImplements(
       error("digLookup", `implements '${packageName}':`, msg);
       const stale = await readIndex(pkg);
       if (stale) {
-        const entries = parseIndex(stale);
-        const matches = searchIndexForImplementors(entries, keyword);
-        if (matches.length > 0) {
-          return toolSuccess(
-            formatImplementsResults(packageName, keyword, matches) +
-            `\n\n---\n\n> **Warning:** Index may be stale. ${msg}`,
+        try {
+          const entries = parseIndex(stale);
+          const matches = searchIndexForImplementors(entries, keyword);
+          if (matches.length > 0) {
+            return toolSuccess(
+              formatImplementsResults(packageName, keyword, matches) +
+              `\n\n---\n\n> **Warning:** Index may be stale. ${msg}`,
+            );
+          }
+        } catch (parseErr) {
+          error(
+            "digLookup",
+            `stale index parse failed for '${packageName}':`,
+            extractErrorMessage(parseErr),
           );
         }
       }

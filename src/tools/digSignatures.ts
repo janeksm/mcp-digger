@@ -141,15 +141,23 @@ export async function digSignatures(
       ]);
 
       if (staleIndex && staleSigs.length > 0) {
-        const entries = parseIndex(staleIndex);
-        const matchedFiles = searchIndexForFiles(entries, keyword, exactMatch);
-        const matchedSigs = staleSigs.filter((s) => matchedFiles.has(s.filePath));
-        sortByScore(matchedSigs, matchedFiles);
+        try {
+          const entries = parseIndex(staleIndex);
+          const matchedFiles = searchIndexForFiles(entries, keyword, exactMatch);
+          const matchedSigs = staleSigs.filter((s) => matchedFiles.has(s.filePath));
+          sortByScore(matchedSigs, matchedFiles);
 
-        if (matchedSigs.length > 0) {
-          return toolSuccess(
-            formatSignatures(packageName, keyword, matchedSigs, matchedFiles) +
-            `\n\n---\n\n> **Warning:** Signatures may be stale. ${msg}`,
+          if (matchedSigs.length > 0) {
+            return toolSuccess(
+              formatSignatures(packageName, keyword, matchedSigs, matchedFiles) +
+              `\n\n---\n\n> **Warning:** Signatures may be stale. ${msg}`,
+            );
+          }
+        } catch (parseErr) {
+          error(
+            "digSignatures",
+            `stale index parse failed for '${packageName}':`,
+            extractErrorMessage(parseErr),
           );
         }
       }

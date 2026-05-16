@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   isFresh,
   markFresh,
@@ -10,6 +10,7 @@ import {
   writeIndex,
   writeSignature,
 } from "../cacheManager.js";
+import * as sourceExtractor from "../sourceExtractor.js";
 import {
   getHeadHash,
   initRepo,
@@ -20,6 +21,14 @@ import {
   makeWildcardRepo,
 } from "../testHelpers.js";
 import { digSignatures } from "./digSignatures.js";
+
+vi.mock("../sourceExtractor.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../sourceExtractor.js")>();
+  return {
+    ...actual,
+    parseIndex: vi.fn(actual.parseIndex),
+  };
+});
 
 // ── Test helpers ──
 
@@ -784,5 +793,49 @@ describe("digSignatures — empty package", () => {
     const result = await digSignatures(config, "EmptyLib", "anything");
 
     expect(result.text).toContain("No matches");
+  });
+});
+
+// ── Stale-fallback defensive guards ──
+
+describe("digSignatures — corrupt stale index", () => {
+  let realParseIndex: typeof sourceExtractor.parseIndex;
+
+  beforeEach(async () => {
+    const actual = await vi.importActual<typeof import("../sourceExtractor.js")>(
+      "../sourceExtractor.js",
+    );
+    realParseIndex = actual.parseIndex;
+    vi.mocked(sourceExtractor.parseIndex).mockImplementation(realParseIndex);
+  });
+
+  afterEach(() => {
+    vi.mocked(sourceExtractor.parseIndex).mockImplementation(realParseIndex);
+  });
+
+  it("returns tool error (no throw) when stale parseIndex throws", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const pkg = makePkg("StaleLib", "gonerepo", "src", cacheDir);
+    await writeIndex(pkg, "OldType|class|Old.cs");
+    await writeSignature(pkg, "Old.cs", "// stale signature content");
+
+    const repo = makeRepoConfig(
+      {
+        name: "gonerepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkg],
+      },
+      tmpDir,
+    );
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    vi.mocked(sourceExtractor.parseIndex).mockImplementationOnce(() => {
+      throw new Error("corrupt index");
+    });
+
+    const result = await digSignatures(config, "StaleLib", "OldType");
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("Source unavailable");
   });
 });

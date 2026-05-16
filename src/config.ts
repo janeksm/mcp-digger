@@ -427,7 +427,11 @@ export function loadConfig(
   const allPackageNames = new Set<string>();
   const noSource: string[] = [];
 
-  for (const repoDef of configFile.repos ?? []) {
+  const repoDefinitions = Array.isArray(configFile.repos)
+    ? configFile.repos
+    : [];
+
+  for (const repoDef of repoDefinitions) {
     if (!repoDef.name?.trim()) {
       errors.push("A repo entry is missing a 'name' field.");
       continue;

@@ -45,9 +45,7 @@ async function git(
     };
     throw new GitError(
       `git ${args[0]} failed: ${e.stderr?.trim() || e.message}`,
-      typeof (e as unknown as Record<string, unknown>).status === "number"
-        ? ((e as unknown as Record<string, unknown>).status as number)
-        : null,
+      typeof e.code === "number" ? e.code : null,
       e.stderr ?? "",
     );
   }

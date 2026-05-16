@@ -403,6 +403,26 @@ describe("loadConfig — fatal errors", () => {
     expect(() => loadConfig(env, cwd)).toThrow(/repos/);
   });
 
+  it.each([
+    ["object", "{}"],
+    ["string", '"bad"'],
+    ["number", "42"],
+    ["null", "null"],
+  ])(
+    "throws ConfigError (not TypeError) when repos is %s",
+    (_label, jsonValue) => {
+      const configDir = path.join(tmpDir, ".digger");
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, "config.json"),
+        `{"repos": ${jsonValue}}`,
+      );
+      expect(() =>
+        loadConfig({ DIGGER_CONFIG: ".digger/config.json" }, tmpDir),
+      ).toThrow(ConfigError);
+    },
+  );
+
   it("throws when a repo has no name", () => {
     const config = { repos: [{ name: "", url: "https://x.git" }] };
     const { env, cwd } = setupConfig(config as ConfigFile);
