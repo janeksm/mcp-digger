@@ -90,8 +90,8 @@ Ask the user to confirm before committing. Do NOT commit automatically.
 After user confirms:
 - `git add .`
 - Commit message: Notes column from TODO.md prefixed with conventional type and step — e.g. `feat: dig_status MCP tool, lsRemote() connectivity check (step 15)`. One line, no body.
-- Include `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`
-- Update the commit hash in TODO.md if needed, then `git add TODO.md` and `git commit --amend --no-edit`
+- No Co-Authored-By or AI attribution (per project rules).
+- Update the commit hash in TODO.md after commit, then `git add TODO.md` and create a new commit (`chore: update TODO hash for <step>`) — never `--amend`, never chain `add && commit`.
 
 ### 8. Write handoff and report (CMCM)
 
