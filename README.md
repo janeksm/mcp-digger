@@ -2,81 +2,90 @@
 
 > **Your internal libraries have source — mcp-digger turns it into the context AI agents need to use your APIs correctly**, saving time, tokens, and manual intervention.
 
-## Built for Internal Libraries
+---
 
-Public NuGet packages have documentation ecosystems — API references, tutorials, community Q&A. Tools like context7 serve that well.
+## ✨ Why
+
+Public NuGet packages have documentation ecosystems — API references, tutorials, community Q&A. Tools like `context7` serve that well.
 
 Internal packages often have source code as their primary documentation. mcp-digger turns that source into structured, searchable, token-efficient context that any MCP-compatible agent can consume — bridging the documentation gap in private library ecosystems.
 
-## The Pain
+**Without it:**
 
-- **Slow context gathering.** AI agents can search referenced library source via shell commands or local clones, but it's a multi-step process — `git clone`, `find`, `grep`, `cat` chains — that burns tokens on infrastructure before any useful context is retrieved.
-- **No semantic search.** File system tools find text matches, not API surfaces. Finding "every type that implements this interface" requires the agent to build extraction scripts on demand, every session, from scratch.
-- **Token waste on raw source.** Without progressive disclosure, the agent reads entire files when it only needs a method signature or a type's public surface.
-- **Permission click fatigue.** Each shell command the agent runs to explore library source requires manual approval — dozens of clicks across a session that purpose-built tools eliminate.
-- **Workspace noise.** Cloning reference repos into the project tree pollutes file search, git status, and the agent's own context window with thousands of irrelevant files.
+- 🐢 **Slow context gathering** — `git clone` + `find` + `grep` + `cat` chains burn tokens on infrastructure before useful context is retrieved.
+- 🔍 **No semantic search** — file system tools find text, not API surfaces. "Every type implementing this interface" means writing extraction scripts on demand.
+- 💸 **Token waste** — agents read whole files when a single method signature would do.
+- 🖱 **Permission click fatigue** — dozens of shell-command approvals per session.
+- 🧹 **Workspace noise** — referenced repos pollute file search, git status, and the agent's context window.
 
-## The Solution
+**With it:**
 
-An MCP server that gives AI coding agents direct, read-only access to .NET library source code — on demand, progressively, without cloning anything into the working directory.
+- ✅ **Correct code on the first try** — real signatures, generic constraints, interface contracts, base class patterns.
+- ⚡ **Self-service context** — point the agent at your NuGet repos once; it browses, searches, and reads autonomously.
+- 🪙 **Progressive disclosure** — 200-token overview before 5,000 tokens of source. Most questions resolve at L1 or L2.
+- 🧼 **Zero workspace pollution** — managed clones live outside your project tree.
+- 🌐 **Any Git host** — GitHub, GitLab, Azure DevOps, Bitbucket, self-hosted — HTTPS or SSH.
 
-Point it at your NuGet repos once. The agent browses packages, searches symbols, reads signatures, and pulls source autonomously — building the context it needs to use your libraries correctly.
+---
 
-## Key Benefits
+## 🛠 How it works
 
-- **Correct code on the first try.** The agent sees actual method signatures, generic constraints, interface contracts, and base class patterns — not guesses. Code generated against real API surfaces works.
-- **Time back in your day.** The agent self-serves library context in seconds, without manual lookup or copy-paste.
-- **Fewer permission clicks.** Eight purpose-built tools replace dozens of ad-hoc shell commands. One allowed MCP server vs. approving every `git clone`, `find`, `grep`, and `cat` individually.
-- **Lower token cost.** Progressive disclosure means the agent reads a 200-token overview before pulling 5,000 tokens of source. Most questions resolve at L1 or L2 — full source is the exception, not the default.
-- **Zero workspace pollution.** Managed clones live outside your project tree. Your git status, your file tree, your search results — all stay clean.
+Ten purpose-built tools, escalating from broad to deep. The agent picks the cheapest tool that answers its question.
 
-## Key Features
+```
+                                                           ┌─→ 📦 dig_package_overview ─┐
+                                                           │   (docs, key types)        │
+   🩺 dig_status  →  📋 dig_list  →  📖 dig_repo_overview  ┤                            ├─→  🔎 dig_lookup     →  📄 dig_file
+   (health)          (discover)      (README + summaries)  │                            │   (symbol → file)       (full source)
+                                                           ├─→ 📁 dig_package_files ────┤
+                                                           │   (file listing)           │
+                                                           └────────────────────────────┴─→  📝 dig_signatures
+                                                                                            (stripped API)
 
-| Feature | Why it matters |
-|---------|---------------|
-| **Progressive disclosure** (L1→L2→L3) | Overview → signatures → full source. The agent reads only what it needs at each step. |
-| **Cross-package symbol search** | Find every class implementing a given interface — across all repos, all packages, one call. |
-| **Three search modes** | `symbol` (find declarations), `implements` (find implementors), `references` (find usages) — the queries agents actually need to understand API usage. |
-| **Stripped signature view** | Public API surface without method bodies — the agent sees the shape of a type without drowning in implementation detail. |
-| **Wildcard package discovery** | `"packageFilter": "MyCompany.*"` — no manual package list maintenance as your repo grows. Follows transitive `ProjectReference` links automatically. |
-| **Branch tracking** | Pin to `develop`, `release/2.0`, or any branch — the agent sees the code you're actually building against. |
-| **Smart README filtering** | Strips install badges, CI/CD, license boilerplate — keeps only architecture and design sections that help understand the library. |
-| **Self-healing** | `dig_refresh` force-rebuilds indexes. Zero-result messages include actionable hints. `dig_status` diagnoses connectivity and auth issues. |
-| **Secure by default** | PATs never logged, path traversal blocked, package names validated, repo URLs restricted to HTTPS/SSH. |
-| **Any Git host** | GitHub, GitLab, Azure DevOps, Bitbucket, self-hosted — anything reachable over HTTPS or SSH. |
+   Operational:  🔄 dig_refresh   (force cache invalidation, on demand)
+   Bootstrap:    🌱 dig_init      (only when no config exists)
+```
 
-## How it works
+---
 
-mcp-digger exposes eight tools that AI agents call automatically, escalating from broad to deep:
+## 🧰 Tools (10)
 
-| Tool | Level | What it does |
-|------|-------|-------------|
-| `dig_status` | Health | Config summary + connectivity check per repo |
-| `dig_list` | Discovery | Lists all configured repos and their packages |
-| `dig_repo_overview` | L1 | Repo README + package listing with .csproj summaries |
-| `dig_package_overview` | L1 | Full package docs, key interfaces, abstract classes |
-| `dig_package_files` | L1 | Source file listing for a package |
-| `dig_lookup` | L2 | Keyword search over type/method index (supports cross-package) |
-| `dig_signatures` | L2 | Stripped C# public API signatures filtered by keyword |
-| `dig_file` | L3 | Full source of a single file |
+| Tier | Tool | What it does |
+|------|------|-------------|
+| **Health** | 🩺 `dig_status` | Config summary, connectivity check per repo, index health stats |
+| **Discovery** | 📋 `dig_list` | Lists configured repos + their packages with one-line `.csproj` summaries |
+| **L1 Overview** | 📖 `dig_repo_overview` | Repo `README.md` (filtered to architecture sections) + package count |
+| **L1 Overview** | 📦 `dig_package_overview` | Package docs, key interfaces, abstract classes, file count |
+| **L1 Overview** | 📁 `dig_package_files` | `.cs` file listing for a package, with directory summary header |
+| **L2 Search** | 🔎 `dig_lookup` | Indexed symbol search — `symbol`, `implements`, or `references` mode. Cross-package supported. |
+| **L2 Search** | 📝 `dig_signatures` | Stripped C# public API surface filtered by keyword (no method bodies) |
+| **L3 Source** | 📄 `dig_file` | Full source of a single file (capped at 1 MB) |
+| **Operational** | 🔄 `dig_refresh` | Force-rebuild caches for one or all repos |
+| **Bootstrap** | 🌱 `dig_init` | Creates starter `.digger/config.json` (registered only when no config is found) |
 
-The agent decides when to escalate based on tool descriptions — you just ask questions about your libraries.
+**Search modes for `dig_lookup`:**
 
-## Install
+| Mode | Finds |
+|------|-------|
+| `symbol` (default) | Type/method declarations matching a name substring |
+| `implements` | Classes/structs implementing an interface or extending a base class |
+| `references` | Files referencing a given type name (word-boundary, case-sensitive) |
+
+---
+
+## 🚀 Quick start
+
+### Install
 
 ```bash
 npm install -g mcp-digger
-```
-
-Or run directly:
-
-```bash
+# or run directly
 npx mcp-digger
 ```
 
-Requires Node.js 20+ and `git` on PATH.
+Requires Node.js 20+ and `git` on `PATH`.
 
-## Configuration
+### Minimal config
 
 Create `.digger/config.json` in your workspace root:
 
@@ -86,23 +95,73 @@ Create `.digger/config.json` in your workspace root:
     {
       "name": "my-libraries",
       "url": "https://github.com/org/shared-libs.git",
-      "sourceRoot": "src",       // where package dirs live (default: "src")
-      "branch": "develop",      // git branch to track (default: repo default branch)
-      "packages": ["MyCompany.Core", "MyCompany.Data"],  // or omit for auto-discovery
+      "packageFilter": "MyCompany.*",
       "auth": {
         "strategy": "pat",
-        "PAT-EnvVarName": "GIT_PAT"  // reads from .env or environment
+        "PAT-EnvVarName": "GIT_PAT"
       }
     }
   ]
 }
 ```
 
-Works with any Git host (GitHub, GitLab, Azure DevOps, Bitbucket, self-hosted, etc.).
+Don't have a config yet? Start the server, then call `dig_init` to scaffold one.
 
-### Auto-discovery
+### Agent setup
 
-Omit `packages` to auto-discover all non-test `.csproj` directories, or use `packageFilter` for prefix matching:
+<details>
+<summary><strong>Claude Code</strong></summary>
+
+Add to `.claude/settings.json` or project settings:
+
+```json
+{
+  "mcpServers": {
+    "digger": {
+      "command": "npx",
+      "args": ["-y", "mcp-digger"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Codex CLI</strong></summary>
+
+Add to `~/.codex/config.toml` (or `.codex/config.toml` for project-scoped):
+
+```toml
+[mcp_servers.mcp-digger]
+command = "npx"
+args = ["-y", "mcp-digger"]
+```
+</details>
+
+### Verify
+
+Once connected, ask your agent to call `dig_status` — it reports config validation, per-repo connectivity, and index health.
+
+---
+
+## ⚙ Configuration
+
+### Repos & packages
+
+A `repos[]` entry has three ways to declare packages:
+
+| Option | Behavior |
+|--------|----------|
+| `"packages": ["A", "B"]` | Explicit list — only these packages are exposed |
+| `"packageFilter": "MyCompany.*"` | Wildcard — narrows to packages matching the prefix, found via `.sln`/`.slnx`/`Directory.Packages.props` workspace scan. Follows transitive `ProjectReference` links automatically. |
+| *(omit both)* | Auto-discover all non-test `.csproj` directories under `sourceRoot` |
+
+`sourceRoot` defaults to `"src"` — set it to whichever directory holds your package folders.
+
+<details>
+<summary><strong>Branch tracking</strong></summary>
+
+By default, managed clones use the repo's default branch. Pin to a specific one:
 
 ```jsonc
 {
@@ -110,15 +169,19 @@ Omit `packages` to auto-discover all non-test `.csproj` directories, or use `pac
     {
       "name": "my-libraries",
       "url": "https://github.com/org/shared-libs.git",
-      "packageFilter": "MyCompany.*"
+      "branch": "develop"
     }
   ]
 }
 ```
 
-### Local repos (Mode B)
+The branch is used for both initial clone and subsequent fetches. Only applies to managed clones — for local repos, you control the checked-out branch yourself.
+</details>
 
-If you already have the repo cloned locally, skip managed cloning:
+<details>
+<summary><strong>Local repos (Mode B)</strong></summary>
+
+Skip managed cloning when the repo is already on disk. The local path is read-only — mcp-digger never fetches or modifies it.
 
 ```jsonc
 {
@@ -133,36 +196,22 @@ If you already have the repo cloned locally, skip managed cloning:
   ]
 }
 ```
+</details>
 
-### Branch tracking
-
-By default, managed clones use the repo's default branch. Set `branch` to track a specific branch instead:
-
-```jsonc
-{
-  "repos": [
-    {
-      "name": "my-libraries",
-      "url": "https://github.com/org/shared-libs.git",
-      "branch": "develop"
-    }
-  ]
-}
-```
-
-The branch is used for both initial clone and subsequent fetches. Only applies to managed clones (Mode A) — for local repos, you control the checked-out branch yourself.
-
-### Auth strategies
+<details>
+<summary><strong>Auth strategies</strong></summary>
 
 | Strategy | Behavior |
 |----------|----------|
-| `auto` (default) | Try unauthenticated, fall back to PAT if set |
+| `auto` *(default)* | Try unauthenticated, fall back to PAT if set |
 | `pat` | Always use PAT (fatal if not set) |
 | `none` | Never authenticate |
 
-PATs can be inline (`"PAT": "..."`) or via environment variable indirection (`"PAT-EnvVarName": "MY_TOKEN"`). The `.env` file in your workspace root is loaded automatically.
+PATs can be inline (`"PAT": "..."`) or via environment variable indirection (`"PAT-EnvVarName": "MY_TOKEN"`). The `.env` file in your workspace root is loaded automatically — values containing ` #` should be quoted.
+</details>
 
-### Environment variables
+<details>
+<summary><strong>Environment variables</strong></summary>
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -170,42 +219,43 @@ PATs can be inline (`"PAT": "..."`) or via environment variable indirection (`"P
 | `MANAGED_SOURCE_DIR` | `.digger/source` | Override managed clone directory |
 | `CACHE_DIR` | `.digger/cache` | Override cache directory |
 
-## Agent setup
+Secrets (PAT values) belong in `.env` or the real environment — never as env vars in this table.
+</details>
 
-### Claude Code
+---
 
-Add to `.claude/settings.json` or project settings:
+## 🩺 Diagnostics & recovery
 
-```json
-{
-  "mcpServers": {
-    "digger": {
-      "command": "npx",
-      "args": ["-y", "mcp-digger"]
-    }
-  }
-}
-```
+| Symptom | First call | Then |
+|---------|-----------|------|
+| Connection / auth issues | `dig_status` | Reports auth attempts, exact error, actionable hints |
+| "No matches" but you expect some | `dig_refresh <repo>` | Force-rebuilds index, picks up new extraction logic |
+| Server starts but no tools visible | `dig_status` | If unconfigured, only `dig_status` + `dig_init` are registered |
+| Need a config from scratch | `dig_init` | Scaffolds `.digger/config.json` (atomic — won't overwrite existing) |
 
-### Codex CLI
-
-Add to `~/.codex/config.toml` (or `.codex/config.toml` for project-scoped):
-
-```toml
-[mcp_servers.mcp-digger]
-command = "npx"
-args = ["-y", "mcp-digger"]
-```
-
-## Debugging
+### Debug log
 
 Enable debug logging in your config:
 
 ```jsonc
-{
-  "debug": true,
-  "repos": [...]
-}
+{ "debug": true, "repos": [...] }
 ```
 
-Logs are written to `.digger/debug.log`.
+Logs go to `.digger/debug.log` (capped at 5 MB, auto-truncated). Critical errors and crash output land in `.digger/error.log`.
+
+---
+
+## 🔒 Security
+
+- 🔑 **PATs never logged** — credentials redacted from all git errors and debug output
+- 🛡 **Path traversal blocked** — `dig_file` rejects `..` and absolute paths
+- ✔ **Validated identifiers** — package names against safe charset; repo URLs restricted to `https:` / `ssh:`
+- 🚫 **Cache hardening** — atomic `meta.json` writes, per-repo mutex, prototype-pollution guards on `JSON.parse`
+- 🪵 **Bounded resources** — log files capped at 5 MB, file reads capped at 1 MB, `discoverPackages` fan-out capped
+- 🧱 **Tools never throw** — every error path returns a usable response with `isError: true`
+
+---
+
+## 📜 License
+
+MIT
