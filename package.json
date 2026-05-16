@@ -1,6 +1,6 @@
 {
   "name": "mcp-digger",
-  "version": "0.7.0",
+  "version": "1.0.0",
   "description": "MCP server giving Claude Code progressive, on-demand access to .NET NuGet package source code.",
   "type": "module",
   "license": "BUSL-1.1",
@@ -34,7 +34,8 @@
     "lint": "eslint src/",
     "test": "vitest run",
     "test:watch": "vitest",
-    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js"
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test && npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

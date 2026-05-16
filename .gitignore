@@ -7,6 +7,7 @@ dist/
 .idea/
 .digger/
 .claude/settings.local.json
+.claude/*.lock
 .mcp.json
 .playwright-mcp/
 HANDOFF.md
