@@ -245,17 +245,6 @@ Logs go to `.digger/debug.log` (capped at 5 MB, auto-truncated). Critical errors
 
 ---
 
-## 🔒 Security
-
-- 🔑 **PATs never logged** — credentials redacted from all git errors and debug output
-- 🛡 **Path traversal blocked** — `dig_file` rejects `..` and absolute paths
-- ✔ **Validated identifiers** — package names against safe charset; repo URLs restricted to `https:` / `ssh:`
-- 🚫 **Cache hardening** — atomic `meta.json` writes, per-repo mutex, prototype-pollution guards on `JSON.parse`
-- 🪵 **Bounded resources** — log files capped at 5 MB, file reads capped at 1 MB, `discoverPackages` fan-out capped
-- 🧱 **Tools never throw** — every error path returns a usable response with `isError: true`
-
----
-
 ## 📜 License
 
 MIT License — see [LICENSE](LICENSE).
