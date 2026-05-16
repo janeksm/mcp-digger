@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { GitAuth } from "../config.js";
 import { markFresh, writeIndex } from "../cacheManager.js";
 import {
+  cleanupTmpDir,
   createBareRepo,
   initRepo,
   makeConfig,
@@ -26,7 +27,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTmpDir(tmpDir);
 });
 
 // ── Unconfigured mode ──

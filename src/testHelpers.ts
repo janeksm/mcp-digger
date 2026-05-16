@@ -6,6 +6,15 @@ import type { DiggerConfig, GitAuth, PackageConfig, RepoConfig } from "./config.
 
 const execFile = util.promisify(child_process.execFile);
 
+/**
+ * Recursively remove a temp dir, tolerating Windows file-handle races where a
+ * git child process still holds a handle when cleanup runs. `maxRetries` +
+ * `retryDelay` retry the rmdir on EBUSY/ENOTEMPTY for ~500ms total.
+ */
+export function cleanupTmpDir(dir: string): void {
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+}
+
 /** Init a git repo with one commit containing the given files. */
 export async function initRepo(
   tmpDir: string,

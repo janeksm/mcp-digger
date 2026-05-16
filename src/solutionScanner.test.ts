@@ -9,6 +9,7 @@ import {
   writeScanCache,
 } from "./solutionScanner.js";
 import {
+  cleanupTmpDir,
   writeCsprojFile,
   writeDirectoryBuildProps,
   writeDirectoryBuildTargets,
@@ -24,7 +25,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTmpDir(tmpDir);
 });
 
 // ── scanWorkspace ──

@@ -23,7 +23,7 @@ export interface RepoDefinition {
   branch?: string; // git branch to clone/track (default: repo default branch)
   sourceRoot?: string; // default "src"
   packages?: string[]; // if omitted → auto-discover at runtime
-  packageFilter?: string; // e.g. "BSF.*" — mutually exclusive with packages
+  packageFilter?: string; // e.g. "MyCompany.*" — mutually exclusive with packages
   auth?: AuthFile;
 }
 
@@ -55,7 +55,7 @@ export interface RepoConfig {
   discoveryMode: "explicit" | "auto" | "wildcard";
   /**
    * Only set when `packageFilter` is present in config. The raw glob value,
-   * e.g. `"BSF.*"`. Prefix is derived at point of use via `.slice(0, -1)`.
+   * e.g. `"MyCompany.*"`. Prefix is derived at point of use via `.slice(0, -1)`.
    */
   packageFilter?: string;
   /** Populated immediately for explicit, lazily (by discoverPackages / wildcard) for auto and wildcard. */

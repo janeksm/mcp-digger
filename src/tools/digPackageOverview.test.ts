@@ -7,6 +7,7 @@ import {
   writeOverview,
 } from "../cacheManager.js";
 import {
+  cleanupTmpDir,
   getHeadHash,
   initRepo,
   makeConfig,
@@ -25,7 +26,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTmpDir(tmpDir);
 });
 
 // ── Basic functionality ──

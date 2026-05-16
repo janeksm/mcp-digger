@@ -5,7 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bootstrap } from "./bootstrap.js";
 import type { DiggerConfig } from "./config.js";
-import { makeConfig, makeLocalRepo, makePkg } from "./testHelpers.js";
+import { cleanupTmpDir, makeConfig, makeLocalRepo, makePkg } from "./testHelpers.js";
 
 interface RegisterCall {
   name: string;
@@ -37,7 +37,7 @@ beforeEach(() => {
 
 afterEach(() => {
   stderrSpy.mockRestore();
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTmpDir(tmpDir);
 });
 
 function makeBootstrapConfig(): DiggerConfig {

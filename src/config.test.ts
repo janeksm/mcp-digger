@@ -15,6 +15,7 @@ import {
   type ConfigFile,
   type RepoConfig,
 } from "./config.js";
+import { cleanupTmpDir } from "./testHelpers.js";
 
 // ── Test helpers ──
 
@@ -25,7 +26,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTmpDir(tmpDir);
 });
 
 /** Write a config file and return env + cwd for loadConfig. */
@@ -52,8 +53,8 @@ function minimalConfig(
   return {
     repos: [
       {
-        name: "bsf",
-        url: "https://gitlab.company.com/shared/bsf.git",
+        name: "acme",
+        url: "https://gitlab.company.com/shared/acme.git",
         packages: ["MyCompany.Core"],
         ...overrides,
       },
@@ -93,9 +94,9 @@ describe("isValidPackageName", () => {
 
 describe("validateRepoUrl", () => {
   it.each([
-    "https://gitlab.company.com/shared/bsf.git",
-    "ssh://git@gitlab.company.com/shared/bsf.git",
-    "git@gitlab.company.com:shared/bsf.git",
+    "https://gitlab.company.com/shared/acme.git",
+    "ssh://git@gitlab.company.com/shared/acme.git",
+    "git@gitlab.company.com:shared/acme.git",
   ])("accepts valid URL: %s", (url) => {
     expect(validateRepoUrl(url)).toBeUndefined();
   });
@@ -121,8 +122,8 @@ describe("loadConfig — happy path", () => {
     const config: ConfigFile = {
       repos: [
         {
-          name: "bsf",
-          url: "https://gitlab.company.com/shared/bsf.git",
+          name: "acme",
+          url: "https://gitlab.company.com/shared/acme.git",
           sourceRoot: "src",
           packages: ["MyCompany.Core", "MyCompany.Auth", "MyCompany.Messaging"],
         },
@@ -139,14 +140,14 @@ describe("loadConfig — happy path", () => {
     expect(cfg.workspaceRoot).toBe(cwd);
     expect(cfg.repos).toHaveLength(2);
 
-    const bsf = cfg.repos.find((r) => r.name === "bsf")!;
-    expect(bsf.url).toBe("https://gitlab.company.com/shared/bsf.git");
-    expect(bsf.sourceRoot).toBe("src");
-    expect(bsf.discoveryMode).toBe("explicit");
-    expect(bsf.packages).toHaveLength(3);
+    const acme = cfg.repos.find((r) => r.name === "acme")!;
+    expect(acme.url).toBe("https://gitlab.company.com/shared/acme.git");
+    expect(acme.sourceRoot).toBe("src");
+    expect(acme.discoveryMode).toBe("explicit");
+    expect(acme.packages).toHaveLength(3);
 
-    const core = bsf.packages.find((p) => p.name === "MyCompany.Core")!;
-    expect(core.repoName).toBe("bsf");
+    const core = acme.packages.find((p) => p.name === "MyCompany.Core")!;
+    expect(core.repoName).toBe("acme");
     expect(core.pathInRepo).toBe("src/MyCompany.Core");
     expect(core.cachePath).toBe(
       path.join(cwd, ".digger/cache", "MyCompany.Core"),
@@ -165,8 +166,8 @@ describe("loadConfig — happy path", () => {
     const config: ConfigFile = {
       repos: [
         {
-          name: "bsf",
-          url: "https://gitlab.company.com/shared/bsf.git",
+          name: "acme",
+          url: "https://gitlab.company.com/shared/acme.git",
           // no packages → auto
         },
       ],
@@ -182,8 +183,8 @@ describe("loadConfig — happy path", () => {
     const config: ConfigFile = {
       repos: [
         {
-          name: "bsf",
-          url: "https://gitlab.company.com/shared/bsf.git",
+          name: "acme",
+          url: "https://gitlab.company.com/shared/acme.git",
           packages: [],
         },
       ],
@@ -230,55 +231,55 @@ describe("loadConfig — happy path", () => {
 describe("loadConfig — localRepos", () => {
   it("maps repo name → absolute local path", () => {
     const config: ConfigFile = {
-      localRepos: { bsf: "C:/dev/bsf-monorepo" },
+      localRepos: { acme: "C:/dev/acme-monorepo" },
       ...minimalConfig(),
     };
     const { env, cwd } = setupConfig(config);
     const cfg = loadConfig(env, cwd);
-    expect(cfg.repos[0]!.localPath).toBe(path.resolve("C:/dev/bsf-monorepo"));
+    expect(cfg.repos[0]!.localPath).toBe(path.resolve(cwd, "C:/dev/acme-monorepo"));
   });
 
   it("resolves relative localRepos paths against cwd", () => {
     const config: ConfigFile = {
-      localRepos: { bsf: "../some/local/bsf" },
+      localRepos: { acme: "../some/local/acme" },
       ...minimalConfig(),
     };
     const { env, cwd } = setupConfig(config);
     const cfg = loadConfig(env, cwd);
     expect(cfg.repos[0]!.localPath).toBe(
-      path.resolve(cwd, "../some/local/bsf"),
+      path.resolve(cwd, "../some/local/acme"),
     );
   });
 
   it("allows repo with only localRepos entry and no url", () => {
     const config: ConfigFile = {
-      localRepos: { bsf: "C:/dev/bsf" },
-      repos: [{ name: "bsf", packages: ["MyCompany.Core"] }],
+      localRepos: { acme: "C:/dev/acme" },
+      repos: [{ name: "acme", packages: ["MyCompany.Core"] }],
     };
     const { env, cwd } = setupConfig(config);
     const cfg = loadConfig(env, cwd);
     expect(cfg.repos[0]!.url).toBeUndefined();
-    expect(cfg.repos[0]!.localPath).toBe(path.resolve("C:/dev/bsf"));
+    expect(cfg.repos[0]!.localPath).toBe(path.resolve(cwd, "C:/dev/acme"));
   });
 
   it("retains both url and localPath when both are set for the same repo", () => {
     const config: ConfigFile = {
-      localRepos: { bsf: "C:/dev/bsf-monorepo" },
+      localRepos: { acme: "C:/dev/acme-monorepo" },
       ...minimalConfig(),
     };
     const { env, cwd } = setupConfig(config);
     const cfg = loadConfig(env, cwd);
     expect(cfg.repos[0]!.url).toBe(
-      "https://gitlab.company.com/shared/bsf.git",
+      "https://gitlab.company.com/shared/acme.git",
     );
     expect(cfg.repos[0]!.localPath).toBe(
-      path.resolve("C:/dev/bsf-monorepo"),
+      path.resolve(cwd, "C:/dev/acme-monorepo"),
     );
   });
 
   it("warns on localRepos entries not matching any repo name", () => {
     const config: ConfigFile = {
-      localRepos: { bsf: "C:/dev/bsf", "ghost-repo": "C:/dev/ghost" },
+      localRepos: { acme: "C:/dev/acme", "ghost-repo": "C:/dev/ghost" },
       ...minimalConfig(),
     };
     const { env, cwd } = setupConfig(config);
@@ -291,7 +292,7 @@ describe("loadConfig — localRepos", () => {
   it("rejects non-object localRepos", () => {
     // Pass a clearly-invalid value via type assertion
     const config = {
-      localRepos: ["bsf:path"] as unknown,
+      localRepos: ["acme:path"] as unknown,
       ...minimalConfig(),
     } as ConfigFile;
     const { env, cwd } = setupConfig(config);
@@ -300,7 +301,7 @@ describe("loadConfig — localRepos", () => {
 
   it("rejects localRepos entry with empty path", () => {
     const config: ConfigFile = {
-      localRepos: { bsf: "   " },
+      localRepos: { acme: "   " },
       ...minimalConfig(),
     };
     const { env, cwd } = setupConfig(config);
@@ -330,7 +331,7 @@ describe("loadConfig — path resolution", () => {
     const { env, cwd } = setupConfig(minimalConfig());
     const cfg = loadConfig(env, cwd);
     expect(cfg.repos[0]!.managedSourcePath).toBe(
-      path.join(cwd, ".digger/source", "bsf"),
+      path.join(cwd, ".digger/source", "acme"),
     );
   });
 
@@ -338,8 +339,8 @@ describe("loadConfig — path resolution", () => {
     const config: ConfigFile = {
       repos: [
         {
-          name: "bsf",
-          url: "https://gitlab.com/bsf.git",
+          name: "acme",
+          url: "https://gitlab.com/acme.git",
           sourceRoot: "libs/packages",
           packages: ["MyCompany.Core"],
         },
@@ -432,12 +433,12 @@ describe("loadConfig — fatal errors", () => {
   it("throws on duplicate repo names", () => {
     const config: ConfigFile = {
       repos: [
-        { name: "bsf", url: "https://a.git", packages: ["A"] },
-        { name: "bsf", url: "https://b.git", packages: ["B"] },
+        { name: "acme", url: "https://a.git", packages: ["A"] },
+        { name: "acme", url: "https://b.git", packages: ["B"] },
       ],
     };
     const { env, cwd } = setupConfig(config);
-    expect(() => loadConfig(env, cwd)).toThrow(/Duplicate repo name.*bsf/);
+    expect(() => loadConfig(env, cwd)).toThrow(/Duplicate repo name.*acme/);
   });
 
   it("throws on duplicate package names across repos", () => {
@@ -455,10 +456,10 @@ describe("loadConfig — fatal errors", () => {
 
   it("throws when a repo has neither url nor localRepos entry", () => {
     const config: ConfigFile = {
-      repos: [{ name: "bsf", packages: ["MyCompany.Core"] }],
+      repos: [{ name: "acme", packages: ["MyCompany.Core"] }],
     };
     const { env, cwd } = setupConfig(config);
-    expect(() => loadConfig(env, cwd)).toThrow(/bsf/);
+    expect(() => loadConfig(env, cwd)).toThrow(/acme/);
     expect(() => loadConfig(env, cwd)).toThrow(/no 'url'/);
   });
 
@@ -487,7 +488,7 @@ describe("loadConfig — fatal errors", () => {
   it("throws on package name with path traversal characters", () => {
     const config: ConfigFile = {
       repos: [
-        { name: "bsf", url: "https://a.git", packages: ["../evil"] },
+        { name: "acme", url: "https://a.git", packages: ["../evil"] },
       ],
     };
     const { env, cwd } = setupConfig(config);
@@ -497,7 +498,7 @@ describe("loadConfig — fatal errors", () => {
   it("throws on package name with forward slash", () => {
     const config: ConfigFile = {
       repos: [
-        { name: "bsf", url: "https://a.git", packages: ["foo/bar"] },
+        { name: "acme", url: "https://a.git", packages: ["foo/bar"] },
       ],
     };
     const { env, cwd } = setupConfig(config);
@@ -530,7 +531,7 @@ describe("loadConfig — fatal errors", () => {
     ["http://example.com/repo.git", /not allowed/],
   ])("throws on disallowed URL scheme: %s", (url, pattern) => {
     const config: ConfigFile = {
-      repos: [{ name: "bsf", url, packages: ["Pkg"] }],
+      repos: [{ name: "acme", url, packages: ["Pkg"] }],
     };
     const { env, cwd } = setupConfig(config);
     expect(() => loadConfig(env, cwd)).toThrow(pattern);
@@ -541,23 +542,23 @@ describe("loadConfig — URL schemes", () => {
   it("accepts SSH shorthand URL", () => {
     const config: ConfigFile = {
       repos: [
-        { name: "bsf", url: "git@gitlab.company.com:shared/bsf.git", packages: ["Pkg"] },
+        { name: "acme", url: "git@gitlab.company.com:shared/acme.git", packages: ["Pkg"] },
       ],
     };
     const { env, cwd } = setupConfig(config);
     const cfg = loadConfig(env, cwd);
-    expect(cfg.repos[0]!.url).toBe("git@gitlab.company.com:shared/bsf.git");
+    expect(cfg.repos[0]!.url).toBe("git@gitlab.company.com:shared/acme.git");
   });
 
   it("accepts ssh:// URL", () => {
     const config: ConfigFile = {
       repos: [
-        { name: "bsf", url: "ssh://git@gitlab.company.com/shared/bsf.git", packages: ["Pkg"] },
+        { name: "acme", url: "ssh://git@gitlab.company.com/shared/acme.git", packages: ["Pkg"] },
       ],
     };
     const { env, cwd } = setupConfig(config);
     const cfg = loadConfig(env, cwd);
-    expect(cfg.repos[0]!.url).toBe("ssh://git@gitlab.company.com/shared/bsf.git");
+    expect(cfg.repos[0]!.url).toBe("ssh://git@gitlab.company.com/shared/acme.git");
   });
 });
 
@@ -918,7 +919,7 @@ describe("findPackage", () => {
     const { env, cwd } = setupConfig({
       repos: [
         {
-          name: "bsf",
+          name: "acme",
           url: "https://a.git",
           packages: ["MyCompany.Core", "MyCompany.Auth"],
         },
@@ -948,7 +949,7 @@ describe("findRepo", () => {
   it("finds the repo owning a package", () => {
     const { env, cwd } = setupConfig({
       repos: [
-        { name: "bsf", url: "https://a.git", packages: ["MyCompany.Core"] },
+        { name: "acme", url: "https://a.git", packages: ["MyCompany.Core"] },
         { name: "auth", url: "https://b.git", packages: ["Company.Auth"] },
       ],
     });
@@ -956,7 +957,7 @@ describe("findRepo", () => {
 
     const repo = findRepo(cfg, "MyCompany.Core");
     expect(repo).toBeDefined();
-    expect(repo!.name).toBe("bsf");
+    expect(repo!.name).toBe("acme");
   });
 
   it("returns undefined for unknown package", () => {
@@ -1002,7 +1003,7 @@ describe("loadConfig — packageFilter", () => {
 
   it("rejects repo name with trailing '.'", () => {
     const config: ConfigFile = {
-      repos: [{ name: "BSF.", url: "https://g.com/x.git" }],
+      repos: [{ name: "Acme.", url: "https://g.com/x.git" }],
     };
     const { env, cwd } = setupConfig(config);
     expect(() => loadConfig(env, cwd)).toThrow(/must not end with '\.'/);
@@ -1121,8 +1122,8 @@ describe("loadConfig — branch", () => {
 
   it("warns when branch is set on local-only repo", () => {
     const config: ConfigFile = {
-      localRepos: { bsf: "C:/dev/bsf" },
-      repos: [{ name: "bsf", branch: "develop", packages: ["MyCompany.Core"] }],
+      localRepos: { acme: "C:/dev/acme" },
+      repos: [{ name: "acme", branch: "develop", packages: ["MyCompany.Core"] }],
     };
     const { env, cwd } = setupConfig(config);
     const cfg = loadConfig(env, cwd);

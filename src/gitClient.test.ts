@@ -16,7 +16,7 @@ import {
   readFile,
   revParse,
 } from "./gitClient.js";
-import { createBareRepo, createBareRepoWithBranch, initRepo } from "./testHelpers.js";
+import { cleanupTmpDir, createBareRepo, createBareRepoWithBranch, initRepo } from "./testHelpers.js";
 
 const execFile = util.promisify(child_process.execFile);
 
@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTmpDir(tmpDir);
 });
 
 const noAuth: GitAuth = { strategy: "none" };

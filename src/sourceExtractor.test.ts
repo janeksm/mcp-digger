@@ -20,7 +20,7 @@ import {
   computeRefCounts,
   type IndexEntry,
 } from "./sourceExtractor.js";
-import { initRepo } from "./testHelpers.js";
+import { cleanupTmpDir, initRepo } from "./testHelpers.js";
 
 // ── Test helpers ──
 
@@ -33,7 +33,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTmpDir(tmpDir);
 });
 
 function makePkg(

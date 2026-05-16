@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { isFresh, markFresh, writeIndex } from "../cacheManager.js";
 import {
+  cleanupTmpDir,
   getHeadHash,
   initRepo,
   makeConfig,
@@ -20,7 +21,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTmpDir(tmpDir);
 });
 
 describe("digRefresh", () => {

@@ -12,6 +12,7 @@ import {
 } from "../cacheManager.js";
 import * as sourceExtractor from "../sourceExtractor.js";
 import {
+  cleanupTmpDir,
   getHeadHash,
   initRepo,
   makeConfig,
@@ -41,7 +42,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTmpDir(tmpDir);
 });
 
 // ── Keyword filtering ──

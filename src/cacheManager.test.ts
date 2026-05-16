@@ -14,6 +14,7 @@ import {
   writeOverview,
   writeSignature,
 } from "./cacheManager.js";
+import { cleanupTmpDir } from "./testHelpers.js";
 
 // ── Test helpers ──
 
@@ -26,7 +27,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTmpDir(tmpDir);
 });
 
 function makePkg(name: string, repoName: string = "myrepo"): PackageConfig {
@@ -75,13 +76,13 @@ describe("isFresh / markFresh", () => {
   });
 
   it("rejects repo names with trailing * or . characters", async () => {
-    await expect(markFresh(cacheDir, "BSF.*", "abc123")).rejects.toThrow(
+    await expect(markFresh(cacheDir, "Acme.*", "abc123")).rejects.toThrow(
       /trailing '\*' or '\.'/,
     );
-    await expect(isFresh(cacheDir, "BSF.*", "abc123")).rejects.toThrow(
+    await expect(isFresh(cacheDir, "Acme.*", "abc123")).rejects.toThrow(
       /trailing '\*' or '\.'/,
     );
-    await expect(markFresh(cacheDir, "BSF.", "abc123")).rejects.toThrow(
+    await expect(markFresh(cacheDir, "Acme.", "abc123")).rejects.toThrow(
       /trailing '\*' or '\.'/,
     );
   });

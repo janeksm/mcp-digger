@@ -8,6 +8,7 @@ import type { RepoConfig } from "./config.js";
 import { ensureAllReady, ensureReady, extractProjectReferenceNames } from "./repoManager.js";
 import { scanCachePath } from "./solutionScanner.js";
 import {
+  cleanupTmpDir,
   createBareRepo as createBareRepoHelper,
   createBareRepoWithBranch as createBareRepoWithBranchHelper,
   initRepo as initRepoHelper,
@@ -31,7 +32,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
+  cleanupTmpDir(tmpDir);
 });
 
 const initRepo = (files: Record<string, string>) => initRepoHelper(tmpDir, files);
@@ -554,13 +555,13 @@ describe("ensureReady — wildcard transitive ProjectReference", () => {
 
 describe("extractProjectReferenceNames", () => {
   it("extracts package name from backslash paths", () => {
-    const xml = '<ProjectReference Include="..\\BSF.Core\\BSF.Core.csproj" />';
-    expect(extractProjectReferenceNames(xml)).toEqual(["BSF.Core"]);
+    const xml = '<ProjectReference Include="..\\Acme.Core\\Acme.Core.csproj" />';
+    expect(extractProjectReferenceNames(xml)).toEqual(["Acme.Core"]);
   });
 
   it("extracts package name from forward-slash paths", () => {
-    const xml = '<ProjectReference Include="../BSF.Core/BSF.Core.csproj" />';
-    expect(extractProjectReferenceNames(xml)).toEqual(["BSF.Core"]);
+    const xml = '<ProjectReference Include="../Acme.Core/Acme.Core.csproj" />';
+    expect(extractProjectReferenceNames(xml)).toEqual(["Acme.Core"]);
   });
 
   it("extracts multiple references from one file", () => {

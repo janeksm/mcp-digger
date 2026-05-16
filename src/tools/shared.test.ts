@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { initRepo, makeConfig, makeLocalRepo, makePkg, makeRepoConfig } from "../testHelpers.js";
+import { cleanupTmpDir, initRepo, makeConfig, makeLocalRepo, makePkg, makeRepoConfig } from "../testHelpers.js";
 import {
   FILE_CHAR_LIMIT,
   PACKAGE_NAME_PARAM,
@@ -161,7 +161,7 @@ describe("withRepoReady", () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    cleanupTmpDir(tmpDir);
   });
 
   it("invokes callback with ensureReady result on success", async () => {
