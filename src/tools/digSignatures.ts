@@ -16,7 +16,7 @@ import { withRepoLock } from "../repoLock.js";
 import { ensureReady } from "../repoManager.js";
 import { extractIndex, extractSignatures, serializeIndex, parseIndex, formatEntryDisplay, splitRespectingGenerics, scoreSymbolMatch, type IndexEntry } from "../sourceExtractor.js";
 
-// ── Tool description (shown to Claude Code) ──
+// ── Tool description (shown to the MCP client / agent) ──
 
 const DESCRIPTION = `Returns stripped C# signatures filtered by keyword.
 Searches the package's type and method index, then returns stripped source

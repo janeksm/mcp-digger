@@ -7,7 +7,7 @@ import { listFiles } from "../gitClient.js";
 import { debug } from "../logger.js";
 import { filterCsFiles } from "../sourceExtractor.js";
 
-// ── Tool description (shown to Claude Code) ──
+// ── Tool description (shown to the MCP client / agent) ──
 
 const FILE_COUNT_HINT_THRESHOLD = 10;
 

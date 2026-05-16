@@ -5,7 +5,7 @@ import { debug, error } from "../logger.js";
 import { ensureAllReady, type RepoReadyResult } from "../repoManager.js";
 import { extractPackageSummary } from "../sourceExtractor.js";
 
-// ── Tool description (shown to Claude Code) ──
+// ── Tool description (shown to the MCP client / agent) ──
 
 const DESCRIPTION = `Lists all configured repositories and their resolved package names.
 Call this first to discover what NuGet packages are available before

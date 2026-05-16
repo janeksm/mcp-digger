@@ -8,7 +8,7 @@ import { debug, error } from "../logger.js";
 import { withRepoLock } from "../repoLock.js";
 import { ensureReady } from "../repoManager.js";
 
-// ── Tool description (shown to Claude Code) ──
+// ── Tool description (shown to the MCP client / agent) ──
 
 const DESCRIPTION = `Digs to the deepest level — full source of a single file from a package.
 Call this only when you need to understand the actual implementation — for example

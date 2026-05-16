@@ -28,11 +28,6 @@ describe("release metadata (V1)", () => {
     expect(lock.packages?.[""]?.version).toBe("1.0.0");
   });
 
-  it("LICENSE names mcp-digger 1.0.0 on the Licensed Work line", () => {
-    const license = read("LICENSE");
-    expect(license).toMatch(/^Licensed Work: mcp-digger 1\.0\.0$/m);
-  });
-
   it("README mentions both dig_init and dig_refresh and has no stale 8-tool references", () => {
     const readme = read("README.md");
     expect(readme).toMatch(/dig_init/);
@@ -42,10 +37,21 @@ describe("release metadata (V1)", () => {
     expect(readme).not.toMatch(/eight tools/i);
   });
 
-  it("README license footer is not bare MIT and mentions BUSL-1.1", () => {
+  it("README license footer mentions MIT and links LICENSE", () => {
     const readme = read("README.md");
-    expect(readme).not.toMatch(/^MIT\s*$/m);
-    expect(readme).toMatch(/BUSL-1\.1/);
+    expect(readme).toMatch(/MIT License/);
+    expect(readme).toMatch(/\[LICENSE\]\(LICENSE\)/);
+  });
+
+  it("LICENSE is MIT and names the copyright holder", () => {
+    const license = read("LICENSE");
+    expect(license).toMatch(/^MIT License/m);
+    expect(license).toMatch(/Janeks Malinovskis/);
+  });
+
+  it("package.json declares MIT license", () => {
+    const pkg = JSON.parse(read("package.json"));
+    expect(pkg.license).toBe("MIT");
   });
 
   it("CHANGELOG.md exists at repo root with a 1.0.0 heading", () => {

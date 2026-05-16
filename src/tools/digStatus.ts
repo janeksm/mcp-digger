@@ -15,7 +15,7 @@ import {
 import { parseIndex } from "../sourceExtractor.js";
 import { TOOL_ANNOTATIONS, extractErrorMessage } from "./shared.js";
 
-// ── Tool description (shown to Claude Code) ──
+// ── Tool description (shown to the MCP client / agent) ──
 
 const DESCRIPTION = `Health-check tool — validates mcp-digger configuration and tests git connectivity
 for all configured repositories. Call this to verify setup is correct, diagnose

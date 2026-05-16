@@ -23,7 +23,7 @@ import {
   type FileReference,
 } from "../sourceExtractor.js";
 
-// ── Tool description (shown to Claude Code) ──
+// ── Tool description (shown to the MCP client / agent) ──
 
 const DESCRIPTION = `Searches type and method indexes for a keyword.
 Provide packageName to search within a specific package, or omit it to search

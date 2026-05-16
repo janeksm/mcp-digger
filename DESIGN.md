@@ -1,6 +1,6 @@
 # mcp-digger — MCP Design
 
-> MCP server exposing nine tools over stdio transport. Claude Code discovers tools via their descriptions and decides when to call each one.
+> MCP server exposing nine tools over stdio transport. The connected MCP client (any AI coding agent) discovers tools via their descriptions and decides when to call each one.
 
 ## Server
 
@@ -134,7 +134,7 @@
 
 ## Tool Interaction Pattern
 
-Claude Code follows a progressive disclosure pattern — escalating detail only as needed:
+The connected agent follows a progressive disclosure pattern — escalating detail only as needed:
 
 ```
 dig_status  →  dig_list  →  dig_repo_overview(repo)    →  dig_package_overview(repo, pkg)  →  dig_lookup(pkg, kw)    →  dig_file(pkg, path)

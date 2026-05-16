@@ -8,7 +8,7 @@ import { debug, error } from "../logger.js";
 import { withRepoLock } from "../repoLock.js";
 import { ensureReady } from "../repoManager.js";
 
-// ── Tool description (shown to Claude Code) ──
+// ── Tool description (shown to the MCP client / agent) ──
 
 const DESCRIPTION = `Force-refreshes cached indexes for one or all repositories.
 Use when search results seem wrong, after mcp-digger was upgraded,

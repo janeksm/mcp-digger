@@ -258,4 +258,4 @@ Logs go to `.digger/debug.log` (capped at 5 MB, auto-truncated). Critical errors
 
 ## 📜 License
 
-Business Source License 1.1 (BUSL-1.1) — see [LICENSE](LICENSE). Change date 2029-05-13, change license MIT.
+MIT License — see [LICENSE](LICENSE).

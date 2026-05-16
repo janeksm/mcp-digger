@@ -7,7 +7,7 @@ import { GitError, readFile } from "../gitClient.js";
 import { debug } from "../logger.js";
 import { filterReadmeSections } from "../readmeFilter.js";
 
-// ── Tool description (shown to Claude Code) ──
+// ── Tool description (shown to the MCP client / agent) ──
 
 const DESCRIPTION = `Returns the repo root README.md (architecture, conventions, design docs) when it exists.
 Use this to understand a repo's structure and design before digging into specific packages.

@@ -13,7 +13,7 @@ import { withRepoLock } from "../repoLock.js";
 import { ensureReady } from "../repoManager.js";
 import { extractOverview } from "../sourceExtractor.js";
 
-// ── Tool description (shown to Claude Code) ──
+// ── Tool description (shown to the MCP client / agent) ──
 
 const DESCRIPTION = `Returns the full overview for a single package in a repository — purpose,
 key public types and interfaces (summarised), architectural conventions, and
