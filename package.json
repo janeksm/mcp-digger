@@ -7,7 +7,11 @@
   "author": "Janeks Malinovskis",
   "repository": {
     "type": "git",
-    "url": "https://github.com/janeksm/mcp-digger.git"
+    "url": "git+https://github.com/janeksm/mcp-digger.git"
+  },
+  "homepage": "https://github.com/janeksm/mcp-digger#readme",
+  "bugs": {
+    "url": "https://github.com/janeksm/mcp-digger/issues"
   },
   "keywords": [
     "mcp",
@@ -23,12 +27,19 @@
     "mcp-digger": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "!dist/testHelpers.*"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
+    "prebuild": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
