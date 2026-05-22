@@ -1,6 +1,8 @@
 # mcp-digger
 
-> **Your internal libraries have source — mcp-digger turns it into the context AI agents need to use your APIs correctly**, saving time, tokens, and manual intervention.
+> **Your internal .NET libraries have source — mcp-digger turns it into the context AI agents need to use your C# APIs correctly**, saving time, tokens, and manual intervention.
+
+> ⚠ **Scope: .NET / C# only.** mcp-digger indexes NuGet-style repos containing `.csproj` packages and `.cs` source files. It is not a general-purpose source indexer — other languages (TypeScript, Python, Java, Go, etc.) are out of scope.
 
 ---
 
@@ -8,7 +10,7 @@
 
 Public NuGet packages have documentation ecosystems — API references, tutorials, community Q&A. Tools like `context7` serve that well.
 
-Internal packages often have source code as their primary documentation. mcp-digger turns that source into structured, searchable, token-efficient context that any MCP-compatible agent can consume — bridging the documentation gap in private library ecosystems.
+Internal .NET packages often have source code as their primary documentation. mcp-digger turns that source into structured, searchable, token-efficient context that any MCP-compatible agent can consume — bridging the documentation gap in private C# library ecosystems.
 
 **Without it:**
 
@@ -83,7 +85,7 @@ npm install -g mcp-digger
 npx mcp-digger
 ```
 
-Requires Node.js 20+ and `git` on `PATH`.
+Requires Node.js 20+, `git` on `PATH`, and a .NET / C# source repo (NuGet packages with `.csproj` + `.cs` sources).
 
 ### Minimal config
 

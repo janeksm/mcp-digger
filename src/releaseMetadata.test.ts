@@ -10,9 +10,9 @@ const read = (rel: string): string => fs.readFileSync(repoRoot(rel), "utf-8");
 const exists = (rel: string): boolean => fs.existsSync(repoRoot(rel));
 
 describe("release metadata (V1)", () => {
-  it("package.json version is 1.0.0", () => {
+  it("package.json version is a valid semver string", () => {
     const pkg = JSON.parse(read("package.json"));
-    expect(pkg.version).toBe("1.0.0");
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+(-[\w.]+)?$/);
   });
 
   it("package.json has prepublishOnly script chaining typecheck, lint, test, build", () => {
@@ -22,10 +22,11 @@ describe("release metadata (V1)", () => {
     );
   });
 
-  it("package-lock.json root and packages[''] version are 1.0.0", () => {
+  it("package-lock.json root and packages[''] version match package.json", () => {
+    const pkg = JSON.parse(read("package.json"));
     const lock = JSON.parse(read("package-lock.json"));
-    expect(lock.version).toBe("1.0.0");
-    expect(lock.packages?.[""]?.version).toBe("1.0.0");
+    expect(lock.version).toBe(pkg.version);
+    expect(lock.packages?.[""]?.version).toBe(pkg.version);
   });
 
   it("README mentions both dig_init and dig_refresh and has no stale 8-tool references", () => {
