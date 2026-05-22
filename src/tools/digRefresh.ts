@@ -87,6 +87,17 @@ async function refreshRepo(
       debug("digRefresh", "refreshing", repo.name);
       const ready = await ensureReady(repo, config);
 
+      if (ready.error) {
+        return {
+          repoName: repo.name,
+          mode: ready.mode,
+          oldHash,
+          newHash: ready.currentHash || undefined,
+          packageCount: repo.packages.length,
+          error: ready.error,
+        };
+      }
+
       await invalidate(config.cacheDir, repo.name, repo.packages);
 
       debug("digRefresh", repo.name, "cache invalidated",

@@ -9,8 +9,10 @@ import { ensureAllReady, ensureReady, extractProjectReferenceNames } from "./rep
 import { scanCachePath } from "./solutionScanner.js";
 import {
   cleanupTmpDir,
+  createBareNonNetRepo as createBareNonNetRepoHelper,
   createBareRepo as createBareRepoHelper,
   createBareRepoWithBranch as createBareRepoWithBranchHelper,
+  initBareRepo as initBareRepoHelper,
   initRepo as initRepoHelper,
   makeConfig as makeConfigHelper,
   makeRepoConfig as makeRepoConfigHelper,
@@ -36,7 +38,9 @@ afterEach(() => {
 });
 
 const initRepo = (files: Record<string, string>) => initRepoHelper(tmpDir, files);
+const initBareRepo = (files: Record<string, string>) => initBareRepoHelper(tmpDir, files);
 const createBareRepo = (files: Record<string, string>) => createBareRepoHelper(tmpDir, files);
+const createBareNonNetRepo = (files: Record<string, string>) => createBareNonNetRepoHelper(tmpDir, files);
 const createBareRepoWithBranch = (
   defaultFiles: Record<string, string>,
   branchName: string,
@@ -65,7 +69,10 @@ describe("ensureReady — Mode B (local)", () => {
   });
 
   it("falls back to managed clone when local path is invalid and URL exists", async () => {
-    const bareDir = await createBareRepo({ "readme.md": "hello" });
+    const bareDir = await createBareRepo({
+      "readme.md": "hello",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
     const badLocal = path.join(tmpDir, "not-a-repo");
     fs.mkdirSync(badLocal, { recursive: true });
 
@@ -111,7 +118,10 @@ describe("ensureReady — Mode A (managed)", () => {
   });
 
   it("fetches when clone already exists", async () => {
-    const bareDir = await createBareRepo({ "file.txt": "v1" });
+    const bareDir = await createBareRepo({
+      "file.txt": "v1",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
     const repo = makeRepoConfig({ name: "mylib", url: bareDir });
     const config = makeConfig([repo]);
 
@@ -143,7 +153,10 @@ describe("ensureReady — Mode A (managed)", () => {
   });
 
   it("cleans up partial clone remnant and reclones", async () => {
-    const bareDir = await createBareRepo({ "hello.txt": "world" });
+    const bareDir = await createBareRepo({
+      "hello.txt": "world",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
     const repo = makeRepoConfig({ name: "mylib", url: bareDir });
     const config = makeConfig([repo]);
 
@@ -244,8 +257,14 @@ describe("ensureAllReady", () => {
   });
 
   it("mixes local and managed repos", async () => {
-    const localRepo = await initRepo({ "file.txt": "local" });
-    const bareDir = await createBareRepo({ "file.txt": "managed" });
+    const localRepo = await initRepo({
+      "file.txt": "local",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
+    const bareDir = await createBareRepo({
+      "file.txt": "managed",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
     const repo1 = makeRepoConfig({ name: "local-lib", localPath: localRepo });
     const repo2 = makeRepoConfig({ name: "remote-lib", url: bareDir });
     const config = makeConfig([repo1, repo2]);
@@ -257,7 +276,10 @@ describe("ensureAllReady", () => {
   });
 
   it("captures per-repo errors on the result instead of throwing", async () => {
-    const goodLocal = await initRepo({ "file.txt": "good" });
+    const goodLocal = await initRepo({
+      "file.txt": "good",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
     const good = makeRepoConfig({ name: "good", localPath: goodLocal });
     const bad = makeRepoConfig({
       name: "bad",
@@ -551,6 +573,121 @@ describe("ensureReady — wildcard transitive ProjectReference", () => {
   });
 });
 
+// ── .NET C# repo validation ──
+
+describe("ensureReady — .NET C# repo validation", () => {
+  it("sets error when local repo has no .csproj", async () => {
+    const localRepo = await initBareRepo({ "README.md": "# project" });
+    const repo = makeRepoConfig({ name: "mylib", localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    const result = await ensureReady(repo, config);
+
+    expect(result.mode).toBe("local");
+    expect(result.currentHash).toMatch(/^[0-9a-f]{40}$/);
+    expect(result.error).toBeDefined();
+    expect(result.error).toContain("only supports .NET C# repositories");
+    expect(result.error).toContain("no .csproj");
+    expect(result.error).toContain(localRepo);
+    expect(result.error).toContain("localPath");
+  });
+
+  it("sets error when managed clone has no .csproj", async () => {
+    const bareDir = await createBareNonNetRepo({ "readme.md": "hello" });
+    const repo = makeRepoConfig({ name: "mylib", url: bareDir });
+    const config = makeConfig([repo]);
+
+    const result = await ensureReady(repo, config);
+
+    expect(result.mode).toBe("managed");
+    expect(result.error).toBeDefined();
+    expect(result.error).toContain("only supports .NET C# repositories");
+    expect(result.error).toContain("URL");
+    expect(result.error).toContain(result.sourcePath);
+  });
+
+  it("short-circuits auto discovery when repo has no .csproj", async () => {
+    const localRepo = await initBareRepo({ "README.md": "# project" });
+    const repo = makeRepoConfig({
+      name: "mylib",
+      localPath: localRepo,
+      discoveryMode: "auto",
+    });
+    const config = makeConfig([repo]);
+
+    const result = await ensureReady(repo, config);
+
+    expect(result.error).toContain("only supports .NET C# repositories");
+    expect(repo.packages).toEqual([]);
+  });
+
+  it("validation error takes precedence over wildcard zero-match error", async () => {
+    const localRepo = await initBareRepo({ "README.md": "# project" });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["Some.Other.Pkg"]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    const results = await ensureAllReady(config);
+    const result = results.get("MyCompany.Libs")!;
+
+    expect(result.error).toBeDefined();
+    expect(result.error).toContain("only supports .NET C# repositories");
+    expect(result.error).not.toContain("matched zero packages");
+  });
+
+  it("ensureAllReady isolates per-repo validation errors", async () => {
+    const validLocal = await initRepo({ "src/Lib/Lib.csproj": "<Project />" });
+    const invalidLocal = await initBareRepo({ "README.md": "# project" });
+    const validPkg = {
+      name: "Lib",
+      repoName: "valid",
+      pathInRepo: "src/Lib",
+      cachePath: path.join(tmpDir, "cache", "Lib"),
+    };
+    const valid = makeRepoConfig({
+      name: "valid",
+      localPath: validLocal,
+      packages: [validPkg],
+    });
+    const invalid = makeRepoConfig({ name: "invalid", localPath: invalidLocal });
+    const config = makeConfig([valid, invalid]);
+
+    const results = await ensureAllReady(config);
+
+    expect(results.get("valid")!.error).toBeUndefined();
+    expect(results.get("invalid")!.error).toContain("only supports .NET C# repositories");
+  });
+
+  it("fallback from invalid localPath to managed clone preserves warning AND surfaces validation error against managed path", async () => {
+    // Local path invalid, managed clone is a non-.NET repo → both warning
+    // (fallback context) AND error (validation) must be set, with the error's
+    // "Checked path" referencing the managed clone, not the bad localPath.
+    const bareDir = await createBareNonNetRepo({ "readme.md": "hello" });
+    const badLocal = path.join(tmpDir, "not-a-repo");
+    fs.mkdirSync(badLocal, { recursive: true });
+
+    const repo = makeRepoConfig({
+      name: "mylib",
+      localPath: badLocal,
+      url: bareDir,
+    });
+    const config = makeConfig([repo]);
+
+    const result = await ensureReady(repo, config);
+
+    expect(result.mode).toBe("managed");
+    expect(result.warning).toContain("not a valid git repo");
+    expect(result.warning).toContain("Falling back");
+    expect(result.error).toBeDefined();
+    expect(result.error).toContain("only supports .NET C# repositories");
+    // Checked path should be the managed clone, not the bad localPath
+    expect(result.error).toContain(result.sourcePath);
+    expect(result.error).not.toContain(badLocal);
+  });
+});
+
 // ── extractProjectReferenceNames ──
 
 describe("extractProjectReferenceNames", () => {
@@ -586,7 +723,10 @@ describe("extractProjectReferenceNames", () => {
 describe("ensureReady — branch", () => {
   it("clones a specific branch for managed repos", async () => {
     const bareDir = await createBareRepoWithBranch(
-      { "default.txt": "on-default" },
+      {
+        "default.txt": "on-default",
+        "src/Lib/Lib.csproj": "<Project />",
+      },
       "develop",
       { "develop.txt": "on-develop" },
     );
@@ -603,7 +743,10 @@ describe("ensureReady — branch", () => {
 
   it("fetches updates on the specified branch", async () => {
     const bareDir = await createBareRepoWithBranch(
-      { "default.txt": "on-default" },
+      {
+        "default.txt": "on-default",
+        "src/Lib/Lib.csproj": "<Project />",
+      },
       "develop",
       { "develop.txt": "v1" },
     );

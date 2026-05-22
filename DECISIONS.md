@@ -2,6 +2,16 @@
 
 > Part of [Cave Man Claude Memory (CMCM)](CAVEMAN_CM.md) — append-only log of non-obvious technical decisions.
 
+## 2026-05-22 — Validate .NET C# repos via tracked `.csproj` presence, not extra file types
+
+Chose `.csproj` (case-insensitive, non-empty stem) as the sole validity signal for repo classification, over also requiring `.cs` files or accepting `.vbproj`/`.fsproj`.
+Why: `.csproj` is the unambiguous C# project marker. `.cs`-only repos (empty templates) are still .NET C# repos. `.vbproj`/`.fsproj` are .NET but not C# — mcp-digger's source extractor only handles C# syntax. Counting only `.csproj` matches what the rest of the codebase already assumes (signature stripping, index extraction, sourceExtractor all parse C#). Considered detecting submodule-only `.csproj` for a friendlier error — rejected as MVP scope creep, since mcp-digger doesn't read submodule content for any other tool either.
+
+## 2026-05-22 — Validate in `ensureReady` only, share via `result.error`; `dig_status` validates on-disk trees directly
+
+Chose to run validation inside `ensureReady()` and set `result.error`, while `dig_status` runs the same validator directly on already-on-disk trees (never calling `ensureReady`).
+Why: `ensureReady` is the natural place — it's already the resolved-source-path boundary. Reusing the existing `result.error` channel (currently set by `buildWildcardEmptyError`) means every downstream tool surfaces validation errors through the same code paths without changes. For `dig_status`, calling `ensureReady` would trigger a clone during a health check — violates the established "health check must not clone" principle. Instead, `dig_status` validates only what already exists: `localPath` if `isValidRepo` passes, or `managedSourcePath` if cloned, else reports "not checked". Considered cloning during `dig_status` for completeness — rejected because the user's first instinct is to run `dig_status` for diagnostics, and a 30s clone on every health check is the wrong default.
+
 ## 2026-05-11 — Cave man knowledge system over embedding-based RAG
 
 Chose markdown files + git over vector DB / embedding pipeline (claude-os approach).

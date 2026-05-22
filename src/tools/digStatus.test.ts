@@ -1,12 +1,33 @@
+import * as child_process from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import * as util from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { GitAuth } from "../config.js";
+
+const execFile = util.promisify(child_process.execFile);
+
+/** Init a git repo at an exact path (testHelpers.initRepo always picks a random child dir). */
+async function initRepoAt(repoDir: string, files: Record<string, string>): Promise<void> {
+  fs.mkdirSync(repoDir, { recursive: true });
+  await execFile("git", ["init", repoDir]);
+  await execFile("git", ["-C", repoDir, "config", "user.email", "test@test.com"]);
+  await execFile("git", ["-C", repoDir, "config", "user.name", "Test"]);
+  for (const [rel, content] of Object.entries(files)) {
+    const full = path.join(repoDir, rel);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, content);
+  }
+  await execFile("git", ["-C", repoDir, "add", "."]);
+  await execFile("git", ["-C", repoDir, "commit", "-m", "initial"]);
+}
+
 import { markFresh, writeIndex } from "../cacheManager.js";
 import {
   cleanupTmpDir,
   createBareRepo,
+  initBareRepo,
   initRepo,
   makeConfig,
   makeLocalRepo,
@@ -84,7 +105,10 @@ describe("config summary", () => {
 describe("per-repo auth display", () => {
   it("renders auth strategy and PAT status under each repo", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/A.cs": "namespace Lib;",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
 
     const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
     const auth: GitAuth = { strategy: "auto", pat: "some-token" };
@@ -99,7 +123,10 @@ describe("per-repo auth display", () => {
 
   it("shows PAT as not set when repo has no PAT", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/A.cs": "namespace Lib;",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
 
     const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
@@ -117,7 +144,10 @@ describe("per-repo auth display", () => {
 describe("local repo checks", () => {
   it("reports OK for valid local repo", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/A.cs": "namespace Lib;",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
 
     const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
@@ -187,7 +217,10 @@ describe("remote connectivity checks", () => {
 describe("mixed results", () => {
   it("counts issues correctly with mixed repos", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "src/Good/A.cs": "namespace Good;" });
+    const repoDir = await initRepo(tmpDir, {
+      "src/Good/A.cs": "namespace Good;",
+      "src/Good/Good.csproj": "<Project />",
+    });
 
     const goodPkg = makePkg("Good", "good", "src", cacheDir);
     const goodRepo = makeLocalRepo("good", repoDir, [goodPkg], tmpDir);
@@ -272,7 +305,10 @@ describe("wildcard repo rendering", () => {
 describe("repo info display", () => {
   it("shows mode, source root, discovery, and packages", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "lib/Core/C.cs": "namespace Core;" });
+    const repoDir = await initRepo(tmpDir, {
+      "lib/Core/C.cs": "namespace Core;",
+      "lib/Core/Core.csproj": "<Project />",
+    });
 
     const pkg = makePkg("Core", "myrepo", "lib", cacheDir);
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir, "lib");
@@ -304,7 +340,10 @@ describe("repo info display", () => {
 
   it("shows auto discovery with not yet discovered when no packages", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "content" });
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/A.cs": "content",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
 
     const repo = makeLocalRepo("myrepo", repoDir, [], tmpDir);
     repo.discoveryMode = "auto";
@@ -317,7 +356,10 @@ describe("repo info display", () => {
 
   it("shows branch when configured", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "content" });
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/A.cs": "content",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
 
     const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
@@ -331,7 +373,10 @@ describe("repo info display", () => {
 
   it("omits branch line when not configured", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "content" });
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/A.cs": "content",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
 
     const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
@@ -348,7 +393,10 @@ describe("repo info display", () => {
 describe("index stats", () => {
   it("shows 'not yet built' when no meta or index cache exists", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/A.cs": "namespace Lib;",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
 
     const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
@@ -362,7 +410,10 @@ describe("index stats", () => {
 
   it("shows cache age and commit when meta exists but no index", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/A.cs": "namespace Lib;",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
 
     const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
@@ -379,7 +430,10 @@ describe("index stats", () => {
 
   it("shows file count, types, and methods from index data", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/A.cs": "namespace Lib;",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
 
     const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
@@ -426,7 +480,10 @@ describe("index stats", () => {
 
   it("counts unique files when multiple symbols share one file", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "namespace Lib;" });
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/A.cs": "namespace Lib;",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
 
     const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
     const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
@@ -493,7 +550,10 @@ describe("index stats", () => {
 
   it("shows 'not yet discovered' for auto repos with 0 packages", async () => {
     const cacheDir = path.join(tmpDir, "cache");
-    const repoDir = await initRepo(tmpDir, { "src/Lib/A.cs": "content" });
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/A.cs": "content",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
 
     const repo = makeLocalRepo("myrepo", repoDir, [], tmpDir);
     repo.discoveryMode = "auto";
@@ -541,5 +601,97 @@ describe("formatCacheAge", () => {
   it("clamps future dates to '< 1m'", () => {
     const now = new Date("2026-05-15T12:00:00Z");
     expect(formatCacheAge("2026-05-15T13:00:00Z", now)).toBe("< 1m");
+  });
+});
+
+// ── .NET C# validation rendering ──
+
+describe(".NET C# validation in dig_status", () => {
+  it("reports OK for valid local repo with .csproj", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initRepo(tmpDir, {
+      "src/Lib/Lib.csproj": "<Project />",
+    });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain(".NET C# validation:** OK");
+    expect(result).not.toContain("only supports .NET C# repositories");
+  });
+
+  it("reports failure for local repo without .csproj", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const repoDir = await initBareRepo(tmpDir, { "README.md": "# project" });
+
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeLocalRepo("myrepo", repoDir, [pkg], tmpDir);
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain(".NET C# validation:** FAILED");
+    expect(result).toContain("only supports .NET C# repositories");
+    expect(result).toContain("no .csproj");
+    expect(result).toContain("have issues");
+    expect(result).not.toContain("All checks passed");
+  });
+
+  it("validates already-cloned managed repo without triggering a clone", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    // Manually create a "managed" repo at managedSourcePath with no .csproj
+    const repo = makeRepoConfig(
+      { name: "managed", url: "/nowhere.git" },
+      tmpDir,
+    );
+    await initRepoAt(repo.managedSourcePath, { "README.md": "hello" });
+
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain(".NET C# validation:** FAILED");
+    expect(result).toContain("only supports .NET C# repositories");
+  });
+
+  it("reports 'not checked' for managed repo that is not cloned yet", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const bareDir = await createBareRepo(tmpDir, { "src/Lib/Lib.csproj": "<Project />" });
+
+    const repo = makeRepoConfig(
+      { name: "managed", url: bareDir, discoveryMode: "auto" },
+      tmpDir,
+    );
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain(".NET C# validation:** not checked");
+    expect(result).toMatch(/not yet cloned/i);
+    // No source dir should have been created
+    expect(fs.existsSync(repo.managedSourcePath)).toBe(false);
+  });
+
+  it("does not run validation when local path is invalid (already covered by Local repo valid: FAILED)", async () => {
+    const cacheDir = path.join(tmpDir, "cache");
+    const pkg = makePkg("Lib", "myrepo", "src", cacheDir);
+    const repo = makeRepoConfig(
+      {
+        name: "myrepo",
+        localPath: path.join(tmpDir, "nonexistent"),
+        packages: [pkg],
+      },
+      tmpDir,
+    );
+    const config = makeConfig([repo], tmpDir, cacheDir);
+
+    const result = await digStatus(config);
+
+    expect(result).toContain("Local repo valid:** FAILED");
+    // Validation line should not assert anything about the missing path
+    expect(result).not.toContain(".NET C# validation:** FAILED");
   });
 });

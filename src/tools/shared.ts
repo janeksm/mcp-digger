@@ -59,6 +59,10 @@ export async function withRepoReady(
   return withRepoLock(repo.name, async () => {
     try {
       const result = await ensureReady(repo, config);
+      if (result.error) {
+        // result.error already names the repo — pass through verbatim.
+        return toolError(result.error);
+      }
       return await fn(result);
     } catch (err) {
       const msg = extractErrorMessage(err);

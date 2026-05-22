@@ -31,6 +31,7 @@ describe("digPackageFiles", () => {
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/Domain/User.cs": "namespace MyLib.Domain;\npublic class User { }",
       "src/MyLib/Services/Auth.cs": "namespace MyLib.Services;\npublic class Auth { }",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
@@ -54,6 +55,7 @@ describe("digPackageFiles", () => {
       "src/MyLib/Class1.g.cs": "// generated",
       "src/MyLib/Model.generated.cs": "// generated",
       "src/MyLib/View.Designer.cs": "// generated",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
@@ -73,6 +75,7 @@ describe("digPackageFiles", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/README.md": "Just docs, no source.",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
@@ -94,6 +97,7 @@ describe("contextual hints", () => {
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/A.cs": "public class A { }",
       "src/MyLib/B.cs": "public class B { }",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
@@ -112,6 +116,7 @@ describe("contextual hints", () => {
     for (let i = 0; i < 15; i++) {
       files[`src/MyLib/Services/Svc${i}.cs`] = `public class Svc${i} { }`;
     }
+    files["src/MyLib/MyLib.csproj"] = "<Project />";
     const repoDir = await initRepo(tmpDir, files);
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
@@ -141,6 +146,7 @@ describe("error handling", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/X.cs": "namespace MyLib; public class X { }",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
@@ -206,6 +212,7 @@ describe("directory summary in tool output", () => {
       "src/MyLib/Attributes/OtherAttr.cs": "public class OtherAttr { }",
       "src/MyLib/Services/Auth.cs": "public class Auth { }",
       "src/MyLib/Root.cs": "public class Root { }",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
@@ -224,6 +231,7 @@ describe("directory summary in tool output", () => {
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/Class1.cs": "public class Class1 { }",
       "src/MyLib/Class2.cs": "public class Class2 { }",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);

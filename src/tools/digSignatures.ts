@@ -74,6 +74,9 @@ export async function digSignatures(
   return withRepoLock(repo.name, async () => {
     try {
       const result = await ensureReady(repo, config);
+      if (result.error) {
+        return toolError(`# ${packageName}\n\n${result.error}`);
+      }
 
       const fresh = await isFresh(config.cacheDir, repo.name, result.currentHash);
 

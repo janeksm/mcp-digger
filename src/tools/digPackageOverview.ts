@@ -60,10 +60,12 @@ export async function digPackageOverview(
       const result = await ensureReady(repo, config);
 
       if (result.error) {
+        // Per-repo error from ensureReady — surface directly. Stale cache
+        // fallback is only appropriate for unreachable repos, not for
+        // validation errors (not-a-.NET-repo or wildcard zero-match), where
+        // returning stale content would mislead the user about what's wrong.
         error("digPackageOverview", `repo '${repo.name}':`, result.error);
-        const pkg = repo.packages.find((p) => p.name === packageName);
-        const fallback = await staleFallback(pkg);
-        return fallback ?? toolError(`Repo '${repo.name}': ${result.error}`);
+        return toolError(result.error);
       }
 
       const pkg = repo.packages.find((p) => p.name === packageName);

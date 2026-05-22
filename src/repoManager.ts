@@ -4,6 +4,7 @@ import { discoverPackages, filterPrefix } from "./config.js";
 import * as gitClient from "./gitClient.js";
 import { debug } from "./logger.js";
 import { withRepoLock } from "./repoLock.js";
+import { buildNotNetCSharpError, validateNetCSharpRepo } from "./repoValidation.js";
 import {
   scanCachePath,
   scanWorkspace,
@@ -28,9 +29,10 @@ export interface RepoReadyResult {
   /** Non-fatal warning (e.g. fallback from local to managed). */
   warning?: string;
   /**
-   * Non-fatal per-repo error. Set when a wildcard repo ends up with zero
-   * matched packages. Tools should surface this text verbatim instead of
-   * (or alongside) rendering the repo's contents.
+   * Non-fatal per-repo error. Set when the repo fails validation (e.g. not a
+   * .NET C# repository — no `.csproj` found) or when a wildcard repo ends up
+   * with zero matched packages. Tools should surface this text verbatim
+   * instead of (or alongside) rendering the repo's contents.
    */
   error?: string;
 }
@@ -91,6 +93,20 @@ export async function ensureReady(
   }
 
   debug("repoManager", repoConfig.name, "ready hash=" + result.currentHash, "mode=" + result.mode);
+
+  // .NET C# validation — must run before discovery/wildcard so the user gets
+  // a clear "not a .NET C# repo" message instead of a misleading
+  // "no packages discovered" or "matched zero packages" downstream.
+  const validation = await validateNetCSharpRepo(result.sourcePath);
+  if (!validation.valid) {
+    result.error = buildNotNetCSharpError(
+      repoConfig.name,
+      validation.checkedPath,
+      result.mode,
+    );
+    debug("repoManager", repoConfig.name, "validation failed:", result.error.split("\n")[0]);
+    return result;
+  }
 
   // Auto-discover packages if needed
   if (repoConfig.discoveryMode === "auto" && repoConfig.packages.length === 0) {

@@ -29,6 +29,7 @@ describe("digList", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/X.cs": "namespace MyLib; public class X { }",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
@@ -47,9 +48,11 @@ describe("digList", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repo1Dir = await initRepo(tmpDir, {
       "src/Alpha/A.cs": "namespace Alpha; public class A { }",
+      "src/Alpha/Alpha.csproj": "<Project />",
     });
     const repo2Dir = await initRepo(tmpDir, {
       "src/Beta/B.cs": "namespace Beta; public class B { }",
+      "src/Beta/Beta.csproj": "<Project />",
     });
 
     const pkgA = makePkg("Alpha", "repo1", "src", cacheDir);
@@ -142,7 +145,6 @@ describe("digList", () => {
 
     const result = await digList(config);
 
-    expect(result.text).toContain("No packages resolved");
     expect(result.text).toContain("Diagnostic:");
     expect(result.text).toContain("matched zero packages");
   });
@@ -163,6 +165,7 @@ describe("digList", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/X.cs": "namespace MyLib; public class X { }",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const goodPkg = makePkg("MyLib", "goodrepo", "src", cacheDir);

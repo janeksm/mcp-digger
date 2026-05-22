@@ -373,7 +373,9 @@ describe("cross-package lookup", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/Alpha/IAlphaService.cs": CS_INTERFACE("Alpha", "IAlphaService"),
+      "src/Alpha/Alpha.csproj": "<Project />",
       "src/Beta/IBetaService.cs": CS_INTERFACE("Beta", "IBetaService"),
+      "src/Beta/Beta.csproj": "<Project />",
     });
 
     const alpha = makePkg("Alpha", "myrepo", "src", cacheDir);
@@ -395,9 +397,11 @@ describe("cross-package lookup", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir1 = await initRepo(tmpDir, {
       "src/Alpha/AlphaWorker.cs": CS_CLASS("Alpha", "AlphaWorker"),
+      "src/Alpha/Alpha.csproj": "<Project />",
     });
     const repoDir2 = await initRepo(tmpDir, {
       "src/Beta/BetaWorker.cs": CS_CLASS("Beta", "BetaWorker"),
+      "src/Beta/Beta.csproj": "<Project />",
     });
 
     const alpha = makePkg("Alpha", "repo1", "src", cacheDir);
@@ -418,6 +422,7 @@ describe("cross-package lookup", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/Alpha/Foo.cs": CS_CLASS("Alpha", "Foo"),
+      "src/Alpha/Alpha.csproj": "<Project />",
     });
 
     const alpha = makePkg("Alpha", "myrepo", "src", cacheDir);
@@ -435,6 +440,7 @@ describe("cross-package lookup", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/Alpha/AlphaType.cs": CS_CLASS("Alpha", "AlphaType"),
+      "src/Alpha/Alpha.csproj": "<Project />",
     });
 
     const alpha = makePkg("Alpha", "goodrepo", "src", cacheDir);
@@ -483,7 +489,9 @@ describe("cross-package lookup", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/Alpha/AlphaType.cs": CS_CLASS("Alpha", "AlphaType"),
+      "src/Alpha/Alpha.csproj": "<Project />",
       "src/Empty/readme.txt": "no code here",
+      "src/Empty/Empty.csproj": "<Project />",
     });
 
     const alpha = makePkg("Alpha", "myrepo", "src", cacheDir);
@@ -549,7 +557,9 @@ describe("implements mode", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/Core/IRepo.cs": CS_INTERFACE("Core", "IRepo"),
+      "src/Core/Core.csproj": "<Project />",
       "src/Data/SqlRepo.cs": CS_WITH_BASE("Data", "SqlRepo", "IRepo"),
+      "src/Data/Data.csproj": "<Project />",
     });
 
     const core = makePkg("Core", "myrepo", "src", cacheDir);
@@ -694,7 +704,9 @@ describe("references mode", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/Core/IEntity.cs": "namespace Core;\npublic interface IEntity { }",
+      "src/Core/Core.csproj": "<Project />",
       "src/Data/Repo.cs": "namespace Data;\npublic class Repo\n{\n    public IEntity Get() { return null; }\n}",
+      "src/Data/Data.csproj": "<Project />",
     });
 
     const core = makePkg("Core", "myrepo", "src", cacheDir);
@@ -718,6 +730,8 @@ describe("references mode", () => {
       files[`src/PkgA/File${i}.cs`] = `namespace PkgA;\npublic class A${i} { public Target Get() => null; }`;
       files[`src/PkgB/File${i}.cs`] = `namespace PkgB;\npublic class B${i} { public Target Get() => null; }`;
     }
+    files["src/PkgA/PkgA.csproj"] = "<Project />";
+    files["src/PkgB/PkgB.csproj"] = "<Project />";
     const repoDir = await initRepo(tmpDir, files);
 
     const pkgA = makePkg("PkgA", "myrepo", "src", cacheDir);
@@ -788,7 +802,9 @@ describe("references mode", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/Core/IHandler.cs": CS_INTERFACE("Core", "IHandler"),
+      "src/Core/Core.csproj": "<Project />",
       "src/App/Worker.cs": CS_CLASS("App", "Worker"),
+      "src/App/App.csproj": "<Project />",
     });
 
     const core = makePkg("Core", "myrepo", "src", cacheDir);
@@ -890,8 +906,10 @@ describe("result ranking", () => {
     const repoDir = await initRepo(tmpDir, {
       "src/Alpha/AReorderUtil.cs": "namespace Alpha;\npublic class AReorderUtil\n{\n}",
       "src/Alpha/Order.cs": "namespace Alpha;\npublic class Order\n{\n}",
+      "src/Alpha/Alpha.csproj": "<Project />",
       "src/Beta/AReorderHelper.cs": "namespace Beta;\npublic class AReorderHelper\n{\n}",
       "src/Beta/IOrder.cs": "namespace Beta;\npublic interface IOrder\n{\n}",
+      "src/Beta/Beta.csproj": "<Project />",
     });
 
     const alpha = makePkg("Alpha", "myrepo", "src", cacheDir);

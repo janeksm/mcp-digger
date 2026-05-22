@@ -55,11 +55,16 @@ export async function digList(config: DiggerConfig): Promise<ToolResult> {
     if (repoResolved) anyRepoResolved = true;
     if (repoResult?.error) failedRepos.push(repo.name);
 
+    // Validation / wildcard errors take precedence over the package list,
+    // even when packages are pre-populated for explicit-mode repos.
+    if (repoResult?.error) {
+      const diag = repoResult.error.split(/\r?\n/).join("\n> ");
+      sections.push(`${header}\n\n> **Diagnostic:** ${diag}`);
+      continue;
+    }
+
     if (repo.packages.length === 0) {
-      const detail = repoResult?.error
-        ? `*No packages resolved.*\n\n> **Diagnostic:** ${repoResult.error.split(/\r?\n/).join("\n> ")}`
-        : `*No packages resolved.*`;
-      sections.push(`${header}\n\n${detail}`);
+      sections.push(`${header}\n\n*No packages resolved.*`);
       continue;
     }
 

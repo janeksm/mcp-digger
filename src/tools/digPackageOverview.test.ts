@@ -40,11 +40,13 @@ describe("digPackageOverview", () => {
         "/// <summary>Foo interface.</summary>",
         "public interface IFoo { }",
       ].join("\n"),
+      "src/PkgA/PkgA.csproj": "<Project />",
       "src/PkgB/IBar.cs": [
         "namespace PkgB;",
         "/// <summary>Bar interface.</summary>",
         "public interface IBar { }",
       ].join("\n"),
+      "src/PkgB/PkgB.csproj": "<Project />",
     });
 
     const pkgA = makePkg("PkgA", "myrepo", "src", cacheDir);
@@ -67,6 +69,7 @@ describe("digPackageOverview", () => {
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/Domain/User.cs": "namespace MyLib.Domain;\npublic class User { }",
       "src/MyLib/Services/Auth.cs": "namespace MyLib.Services;\npublic class Auth { }",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
@@ -84,6 +87,7 @@ describe("digPackageOverview", () => {
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/Domain/User.cs": "namespace MyLib.Domain;\npublic class User { }",
       "src/MyLib/Services/Auth.cs": "namespace MyLib.Services;\npublic class Auth { }",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
@@ -100,6 +104,7 @@ describe("digPackageOverview", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/Dummy.cs": "namespace MyLib; public class Dummy { }",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
@@ -123,6 +128,7 @@ describe("digPackageOverview", () => {
         "/// <summary>Foo interface.</summary>",
         "public interface IFoo { }",
       ].join("\n"),
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);
@@ -155,6 +161,7 @@ describe("error handling", () => {
     const cacheDir = path.join(tmpDir, "cache");
     const repoDir = await initRepo(tmpDir, {
       "src/MyLib/X.cs": "namespace MyLib; public class X { }",
+      "src/MyLib/MyLib.csproj": "<Project />",
     });
 
     const pkg = makePkg("MyLib", "myrepo", "src", cacheDir);

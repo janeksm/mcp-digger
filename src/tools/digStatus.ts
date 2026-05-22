@@ -12,6 +12,7 @@ import {
   writeScanCache,
   type ScanResult,
 } from "../solutionScanner.js";
+import { buildNotNetCSharpError, validateNetCSharpRepo } from "../repoValidation.js";
 import { parseIndex } from "../sourceExtractor.js";
 import { TOOL_ANNOTATIONS, extractErrorMessage } from "./shared.js";
 
@@ -192,6 +193,13 @@ export async function digStatus(config: DiggerConfig | null): Promise<string> {
       }
     }
 
+    // .NET C# validation — validate any tree already on disk, never trigger a clone.
+    const validationLines = await formatNetCsharpValidation(repo);
+    sections.push(...validationLines.lines);
+    if (validationLines.failed) {
+      repoIssues.push("not a .NET C# repository");
+    }
+
     // Index stats
     sections.push(...await formatIndexStats(config.cacheDir, repo));
 
@@ -213,6 +221,65 @@ export async function digStatus(config: DiggerConfig | null): Promise<string> {
 }
 
 // ── Internal ──
+
+/**
+ * Decide which on-disk tree (if any) to validate, then render the
+ * `.NET C# validation` line for the per-repo block.
+ *
+ * Decision rule:
+ * - localPath set AND valid git repo → validate against localPath
+ * - else managed clone exists at managedSourcePath → validate that
+ * - else → render "not checked — repo not yet cloned"
+ *
+ * Never triggers a clone — health check must stay cheap. Local-path-invalid
+ * is already surfaced by the "Local repo valid" line; this helper stays
+ * silent for that case to avoid duplicate noise.
+ */
+async function formatNetCsharpValidation(
+  repo: RepoConfig,
+): Promise<{ lines: string[]; failed: boolean }> {
+  let target: { path: string; mode: "local" | "managed" } | undefined;
+
+  if (repo.localPath && (await gitClient.isValidRepo(repo.localPath))) {
+    target = { path: repo.localPath, mode: "local" };
+  } else if (await gitClient.isValidRepo(repo.managedSourcePath)) {
+    target = { path: repo.managedSourcePath, mode: "managed" };
+  }
+
+  if (!target) {
+    if (repo.localPath) {
+      // Local path is invalid — already reported above, stay quiet.
+      return { lines: [], failed: false };
+    }
+    return {
+      lines: [`- **.NET C# validation:** not checked — repo not yet cloned`],
+      failed: false,
+    };
+  }
+
+  try {
+    const validation = await validateNetCSharpRepo(target.path);
+    if (validation.valid) {
+      return {
+        lines: [`- **.NET C# validation:** OK (${validation.csprojCount} .csproj)`],
+        failed: false,
+      };
+    }
+    const errorText = buildNotNetCSharpError(repo.name, validation.checkedPath, target.mode);
+    const lines = [`- **.NET C# validation:** FAILED`];
+    for (const line of errorText.split("\n")) {
+      lines.push(`  - ${line}`);
+    }
+    return { lines, failed: true };
+  } catch (err) {
+    const msg = extractErrorMessage(err);
+    error("digStatus", `repo '${repo.name}' validation check failed:`, msg);
+    return {
+      lines: [`- **.NET C# validation:** unavailable (${msg})`],
+      failed: true,
+    };
+  }
+}
 
 function formatDiscovery(repo: RepoConfig, scan: ScanResult | null): string[] {
   const lines: string[] = [];

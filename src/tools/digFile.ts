@@ -60,6 +60,9 @@ export async function digFile(
   return withRepoLock(repo.name, async () => {
     try {
       const result = await ensureReady(repo, config);
+      if (result.error) {
+        return toolError(`# ${packageName} — ${filePath}\n\n${result.error}`);
+      }
       const fullPath = `${pkg.pathInRepo}/${safeFilePath}`;
 
       try {

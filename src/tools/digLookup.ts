@@ -99,6 +99,9 @@ export async function digLookup(
   return withRepoLock(repo.name, async () => {
     try {
       const result = await ensureReady(repo, config);
+      if (result.error) {
+        return toolError(`# ${packageName}\n\n${result.error}`);
+      }
       const fresh = await isFresh(config.cacheDir, repo.name, result.currentHash);
       if (!fresh) await invalidate(config.cacheDir, repo.name, repo.packages);
 
@@ -481,6 +484,9 @@ async function digLookupImplements(
   return withRepoLock(repo.name, async () => {
     try {
       const result = await ensureReady(repo, config);
+      if (result.error) {
+        return toolError(`# ${packageName} — implements: "${keyword}"\n\n${result.error}`);
+      }
       const fresh = await isFresh(config.cacheDir, repo.name, result.currentHash);
       if (!fresh) await invalidate(config.cacheDir, repo.name, repo.packages);
 
@@ -554,6 +560,9 @@ async function digLookupReferences(
   return withRepoLock(repo.name, async () => {
     try {
       const result = await ensureReady(repo, config);
+      if (result.error) {
+        return toolError(`# ${packageName} — references: "${keyword}"\n\n${result.error}`);
+      }
       const refs = await searchReferences(result.sourcePath, pkg, keyword, MAX_REFERENCE_FILES);
 
       if (refs.length === 0) {

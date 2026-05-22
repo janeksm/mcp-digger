@@ -15,8 +15,41 @@ export function cleanupTmpDir(dir: string): void {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
-/** Init a git repo with one commit containing the given files. */
+/**
+ * Init a git repo with one commit containing the given files.
+ *
+ * `.NET C# repo validation` (added 2026-05-22) requires every resolved repo
+ * to contain at least one tracked `.csproj` or it is flagged as
+ * "not a .NET C# repository" in `ensureReady()` / `dig_status`. To keep
+ * existing fixtures working without per-test backfill, `initRepo` injects
+ * a default `.csproj` per distinct two-segment package directory observed
+ * in `files` (any path matching `<root>/<pkgDir>/<rest>`, e.g.
+ * `src/MyLib/Foo.cs` → adds `src/MyLib/MyLib.csproj`). For flat layouts
+ * (`src/b.cs`) no injection happens — those tests don't exercise
+ * validation. Tests that intentionally need a non-.NET repo (including the
+ * validation tests themselves) should use `initBareRepo` instead, which
+ * never injects anything.
+ */
 export async function initRepo(
+  tmpDir: string,
+  files: Record<string, string>,
+): Promise<string> {
+  return initRepoCore(tmpDir, withDefaultCsprojes(files));
+}
+
+/**
+ * Init a git repo WITHOUT injecting a default `.csproj`. Use when the test
+ * intentionally needs a non-.NET repo (e.g. validating that mcp-digger
+ * surfaces the "not a .NET C# repository" error).
+ */
+export async function initBareRepo(
+  tmpDir: string,
+  files: Record<string, string>,
+): Promise<string> {
+  return initRepoCore(tmpDir, files);
+}
+
+async function initRepoCore(
   tmpDir: string,
   files: Record<string, string>,
 ): Promise<string> {
@@ -37,6 +70,35 @@ export async function initRepo(
   await execFile("git", ["-C", repoDir, "commit", "-m", "initial"]);
 
   return repoDir;
+}
+
+function withDefaultCsprojes(
+  files: Record<string, string>,
+): Record<string, string> {
+  // If any file is a .csproj anywhere in the tree, the repo is already valid.
+  const hasAnyCsproj = Object.keys(files).some((f) => /\.csproj$/i.test(f));
+  if (hasAnyCsproj) return files;
+
+  // Auto-inject only when a recognisable package layout is present
+  // (`<root>/<pkgDir>/...`, e.g. `src/MyLib/Foo.cs`). For flat layouts
+  // (`a.txt`, `src/b.cs`) the test is not exercising validation, so leave
+  // the repo untouched and let `initBareRepo` be the explicit signal when
+  // a test intentionally wants a non-.NET repo.
+  const dirs = new Set<string>();
+  for (const f of Object.keys(files)) {
+    const m = /^([^/]+)\/([^/]+)\/[^/]+/.exec(f);
+    if (m) {
+      dirs.add(`${m[1]}/${m[2]}`);
+    }
+  }
+  if (dirs.size === 0) return files;
+
+  const augmented = { ...files };
+  for (const dir of dirs) {
+    const baseName = dir.split("/").pop()!;
+    augmented[`${dir}/${baseName}.csproj`] = "<Project />";
+  }
+  return augmented;
 }
 
 /** Get the HEAD commit hash of a repo. */
@@ -118,12 +180,27 @@ export function makeConfig(
   };
 }
 
-/** Create a bare git repo (cloneable remote) with one commit. */
+/**
+ * Create a bare git repo (cloneable remote) with one commit. Like
+ * `initRepo`, this injects a default `.csproj` so the repo passes .NET C#
+ * validation. Use `createBareNonNetRepo` for the explicit non-.NET case.
+ */
 export async function createBareRepo(
   tmpDir: string,
   files: Record<string, string>,
 ): Promise<string> {
-  const workDir = await initRepo(tmpDir, files);
+  return createBareRepoCore(tmpDir, await initRepo(tmpDir, files));
+}
+
+/** Like `createBareRepo` but does NOT inject a default `.csproj`. */
+export async function createBareNonNetRepo(
+  tmpDir: string,
+  files: Record<string, string>,
+): Promise<string> {
+  return createBareRepoCore(tmpDir, await initBareRepo(tmpDir, files));
+}
+
+async function createBareRepoCore(tmpDir: string, workDir: string): Promise<string> {
   const bareDir = path.join(tmpDir, "bare-" + Math.random().toString(36).slice(2) + ".git");
   await execFile("git", ["clone", "--bare", workDir, bareDir]);
   return bareDir;
