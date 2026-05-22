@@ -29,7 +29,6 @@ describe("validateNetCSharpRepo", () => {
 
     expect(result.valid).toBe(true);
     expect(result.csprojCount).toBe(1);
-    expect(result.checkedPath).toBe(repoDir);
   });
 
   it("invalid: repo with only README", async () => {
@@ -85,6 +84,22 @@ describe("validateNetCSharpRepo", () => {
 
     expect(result.valid).toBe(true);
     expect(result.csprojCount).toBe(1);
+  });
+
+  it("invalid: staged but uncommitted .csproj does not count", async () => {
+    // Validation must read HEAD, not the index — otherwise downstream tools
+    // that `git show HEAD:<path>` would fail on a repo that passed validation.
+    const repoDir = await initBareRepo(tmpDir, { "README.md": "# project" });
+    const csprojPath = path.join(repoDir, "src", "Lib", "Lib.csproj");
+    fs.mkdirSync(path.dirname(csprojPath), { recursive: true });
+    fs.writeFileSync(csprojPath, "<Project />");
+    await execFile("git", ["-C", repoDir, "add", "src/Lib/Lib.csproj"]);
+    // Intentionally NOT committed.
+
+    const result = await validateNetCSharpRepo(repoDir);
+
+    expect(result.valid).toBe(false);
+    expect(result.csprojCount).toBe(0);
   });
 
   it("invalid: file literally named '.csproj' with no stem does not count", async () => {

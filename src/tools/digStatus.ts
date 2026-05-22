@@ -194,9 +194,7 @@ export async function digStatus(config: DiggerConfig | null): Promise<string> {
     }
 
     // .NET C# validation — validate any tree already on disk, never trigger a clone.
-    const validationLines = await formatNetCsharpValidation(repo);
-    sections.push(...validationLines.lines);
-    if (validationLines.failed) {
+    if (await appendNetCsharpValidation(sections, repo)) {
       repoIssues.push("not a .NET C# repository");
     }
 
@@ -223,8 +221,9 @@ export async function digStatus(config: DiggerConfig | null): Promise<string> {
 // ── Internal ──
 
 /**
- * Decide which on-disk tree (if any) to validate, then render the
- * `.NET C# validation` line for the per-repo block.
+ * Decide which on-disk tree (if any) to validate, append the
+ * `.NET C# validation` line(s) to `sections`, and return whether validation
+ * failed.
  *
  * Decision rule:
  * - localPath set AND valid git repo → validate against localPath
@@ -235,9 +234,10 @@ export async function digStatus(config: DiggerConfig | null): Promise<string> {
  * is already surfaced by the "Local repo valid" line; this helper stays
  * silent for that case to avoid duplicate noise.
  */
-async function formatNetCsharpValidation(
+async function appendNetCsharpValidation(
+  sections: string[],
   repo: RepoConfig,
-): Promise<{ lines: string[]; failed: boolean }> {
+): Promise<boolean> {
   let target: { path: string; mode: "local" | "managed" } | undefined;
 
   if (repo.localPath && (await gitClient.isValidRepo(repo.localPath))) {
@@ -249,35 +249,29 @@ async function formatNetCsharpValidation(
   if (!target) {
     if (repo.localPath) {
       // Local path is invalid — already reported above, stay quiet.
-      return { lines: [], failed: false };
+      return false;
     }
-    return {
-      lines: [`- **.NET C# validation:** not checked — repo not yet cloned`],
-      failed: false,
-    };
+    sections.push(`- **.NET C# validation:** not checked — repo not yet cloned`);
+    return false;
   }
 
   try {
     const validation = await validateNetCSharpRepo(target.path);
     if (validation.valid) {
-      return {
-        lines: [`- **.NET C# validation:** OK (${validation.csprojCount} .csproj)`],
-        failed: false,
-      };
+      sections.push(`- **.NET C# validation:** OK (${validation.csprojCount} .csproj)`);
+      return false;
     }
-    const errorText = buildNotNetCSharpError(repo.name, validation.checkedPath, target.mode);
-    const lines = [`- **.NET C# validation:** FAILED`];
+    const errorText = buildNotNetCSharpError(repo.name, target.path, target.mode);
+    sections.push(`- **.NET C# validation:** FAILED`);
     for (const line of errorText.split("\n")) {
-      lines.push(`  - ${line}`);
+      sections.push(`  - ${line}`);
     }
-    return { lines, failed: true };
+    return true;
   } catch (err) {
     const msg = extractErrorMessage(err);
     error("digStatus", `repo '${repo.name}' validation check failed:`, msg);
-    return {
-      lines: [`- **.NET C# validation:** unavailable (${msg})`],
-      failed: true,
-    };
+    sections.push(`- **.NET C# validation:** unavailable (${msg})`);
+    return true;
   }
 }
 

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, extractErrorMessage, requirePackage, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
+import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, extractErrorMessage, repoErrorResult, requirePackage, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
 import {
   invalidate,
   isFresh,
@@ -99,9 +99,8 @@ export async function digLookup(
   return withRepoLock(repo.name, async () => {
     try {
       const result = await ensureReady(repo, config);
-      if (result.error) {
-        return toolError(`# ${packageName}\n\n${result.error}`);
-      }
+      const errResult = repoErrorResult(result, `# ${packageName}`);
+      if (errResult) return errResult;
       const fresh = await isFresh(config.cacheDir, repo.name, result.currentHash);
       if (!fresh) await invalidate(config.cacheDir, repo.name, repo.packages);
 
@@ -341,7 +340,13 @@ async function crossPackageIndexSearch(
 
     if (!ready || ready.error) {
       warnings.push(`${repo.name}: ${ready?.error ?? "repo resolution failed"}`);
-      await collectStaleResults(repo.packages, keyword, opts.searchFn, allResults);
+      // Only fall back to stale indexes for transient source failures
+      // (clone/fetch/network). Deterministic config errors — repo isn't .NET,
+      // wildcard matched zero packages — must not return stale matches;
+      // that would contradict the fail-fast contract.
+      if (!ready || ready.errorKind === "source-unavailable") {
+        await collectStaleResults(repo.packages, keyword, opts.searchFn, allResults);
+      }
       continue;
     }
 
@@ -484,9 +489,8 @@ async function digLookupImplements(
   return withRepoLock(repo.name, async () => {
     try {
       const result = await ensureReady(repo, config);
-      if (result.error) {
-        return toolError(`# ${packageName} — implements: "${keyword}"\n\n${result.error}`);
-      }
+      const errResult = repoErrorResult(result, `# ${packageName} — implements: "${keyword}"`);
+      if (errResult) return errResult;
       const fresh = await isFresh(config.cacheDir, repo.name, result.currentHash);
       if (!fresh) await invalidate(config.cacheDir, repo.name, repo.packages);
 
@@ -560,9 +564,8 @@ async function digLookupReferences(
   return withRepoLock(repo.name, async () => {
     try {
       const result = await ensureReady(repo, config);
-      if (result.error) {
-        return toolError(`# ${packageName} — references: "${keyword}"\n\n${result.error}`);
-      }
+      const errResult = repoErrorResult(result, `# ${packageName} — references: "${keyword}"`);
+      if (errResult) return errResult;
       const refs = await searchReferences(result.sourcePath, pkg, keyword, MAX_REFERENCE_FILES);
 
       if (refs.length === 0) {

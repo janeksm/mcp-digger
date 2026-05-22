@@ -35,6 +35,13 @@ export interface RepoReadyResult {
    * instead of (or alongside) rendering the repo's contents.
    */
   error?: string;
+  /**
+   * Classifies `error` so callers can decide whether to fall back to stale
+   * cached content. Only `"source-unavailable"` should trigger stale fallback;
+   * `"validation"` and `"wildcard-empty"` are deterministic config-level
+   * errors where stale data would mislead the user.
+   */
+  errorKind?: "validation" | "wildcard-empty" | "source-unavailable";
 }
 
 // ── Public API ──
@@ -101,9 +108,10 @@ export async function ensureReady(
   if (!validation.valid) {
     result.error = buildNotNetCSharpError(
       repoConfig.name,
-      validation.checkedPath,
+      result.sourcePath,
       result.mode,
     );
+    result.errorKind = "validation";
     debug("repoManager", repoConfig.name, "validation failed:", result.error.split("\n")[0]);
     return result;
   }
@@ -166,6 +174,7 @@ export async function ensureAllReady(
         currentHash: "",
         mode: repo.localPath ? "local" : "managed",
         error: msg,
+        errorKind: "source-unavailable",
       });
     }
   }
@@ -243,6 +252,7 @@ function applyWildcardMatch(
       candidates.length,
       config,
     );
+    result.errorKind = "wildcard-empty";
   }
 }
 

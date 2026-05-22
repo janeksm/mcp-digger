@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, extractErrorMessage, requirePackage, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
+import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, extractErrorMessage, repoErrorResult, requirePackage, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
 import {
   invalidate,
   isFresh,
@@ -74,9 +74,8 @@ export async function digSignatures(
   return withRepoLock(repo.name, async () => {
     try {
       const result = await ensureReady(repo, config);
-      if (result.error) {
-        return toolError(`# ${packageName}\n\n${result.error}`);
-      }
+      const errResult = repoErrorResult(result, `# ${packageName}`);
+      if (errResult) return errResult;
 
       const fresh = await isFresh(config.cacheDir, repo.name, result.currentHash);
 

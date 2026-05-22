@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { FILE_CHAR_LIMIT, PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, extractErrorMessage, requirePackage, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
+import { FILE_CHAR_LIMIT, PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, extractErrorMessage, repoErrorResult, requirePackage, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
 import { z } from "zod";
 import type { DiggerConfig } from "../config.js";
 import { GitError, listFiles, readFile } from "../gitClient.js";
@@ -60,9 +60,8 @@ export async function digFile(
   return withRepoLock(repo.name, async () => {
     try {
       const result = await ensureReady(repo, config);
-      if (result.error) {
-        return toolError(`# ${packageName} — ${filePath}\n\n${result.error}`);
-      }
+      const errResult = repoErrorResult(result, `# ${packageName} — ${filePath}`);
+      if (errResult) return errResult;
       const fullPath = `${pkg.pathInRepo}/${safeFilePath}`;
 
       try {

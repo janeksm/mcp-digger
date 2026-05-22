@@ -40,6 +40,26 @@ export function extractErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Convert a non-fatal `ensureReady()` error (`result.error`) into a tool
+ * error result with an optional markdown header prefix. Returns `undefined`
+ * when there is no error, so callers can write
+ *
+ *     const errResult = repoErrorResult(result, `# ${packageName}`);
+ *     if (errResult) return errResult;
+ *
+ * instead of repeating the same `if (result.error) return toolError(…)`
+ * formatting across every tool.
+ */
+export function repoErrorResult(
+  result: { error?: string },
+  header?: string,
+): ToolResult | undefined {
+  if (!result.error) return undefined;
+  const body = header ? `${header}\n\n${result.error}` : result.error;
+  return toolError(body);
+}
+
 export function requirePackage(
   config: DiggerConfig,
   packageName: string,

@@ -1,5 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, extractErrorMessage, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
+import { PACKAGE_NAME_PARAM, TOOL_ANNOTATIONS, extractErrorMessage, repoErrorResult, toCallToolResult, toolError, toolSuccess, type ToolResult } from "./shared.js";
 import { z } from "zod";
 import {
   isFresh,
@@ -59,13 +59,14 @@ export async function digPackageOverview(
     try {
       const result = await ensureReady(repo, config);
 
-      if (result.error) {
-        // Per-repo error from ensureReady — surface directly. Stale cache
-        // fallback is only appropriate for unreachable repos, not for
-        // validation errors (not-a-.NET-repo or wildcard zero-match), where
-        // returning stale content would mislead the user about what's wrong.
+      // Per-repo error from ensureReady — surface directly. Stale cache
+      // fallback is only appropriate for unreachable repos, not for
+      // validation errors (not-a-.NET-repo or wildcard zero-match), where
+      // returning stale content would mislead the user about what's wrong.
+      const errResult = repoErrorResult(result);
+      if (errResult) {
         error("digPackageOverview", `repo '${repo.name}':`, result.error);
-        return toolError(result.error);
+        return errResult;
       }
 
       const pkg = repo.packages.find((p) => p.name === packageName);

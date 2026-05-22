@@ -273,6 +273,21 @@ export async function listFiles(
     .filter((l) => l.length > 0);
 }
 
+/**
+ * List files in the repo at `HEAD`. Unlike {@link listFiles} (which reads the
+ * git index and therefore counts staged-but-uncommitted files), this reads
+ * the committed tree — matching downstream `git show HEAD:<path>` semantics
+ * used by `readFile()`. Use this when validity must be defined against what
+ * is committed, not what is staged.
+ */
+export async function listHeadFiles(repoDir: string): Promise<string[]> {
+  const { stdout } = await git(["-C", repoDir, "ls-tree", "-r", "--name-only", "HEAD"]);
+  return stdout
+    .trimEnd()
+    .split("\n")
+    .filter((l) => l.length > 0);
+}
+
 // ── Connectivity check ──
 
 export interface LsRemoteResult {

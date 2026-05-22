@@ -5,8 +5,6 @@ const CSPROJ_RE = /[^/]+\.csproj$/i;
 export interface RepoValidationResult {
   valid: boolean;
   csprojCount: number;
-  /** Absolute path that was inspected. */
-  checkedPath: string;
 }
 
 /** Resolved-repo mode label used to tailor the error fix-line. */
@@ -14,19 +12,20 @@ export type ValidationRepoMode = "local" | "managed";
 
 /**
  * Check whether a resolved repo on disk is a .NET C# repository — i.e. its
- * tracked git tree contains at least one `*.csproj` file (case-insensitive,
- * non-empty stem). `*.cs` files alone do not count, and `.vbproj`/`.fsproj`
- * do not count (mcp-digger only handles C# syntax).
+ * committed git tree (`HEAD`) contains at least one `*.csproj` file
+ * (case-insensitive, non-empty stem). `*.cs` files alone do not count, and
+ * `.vbproj`/`.fsproj` do not count (mcp-digger only handles C# syntax).
  *
- * Reads tracked content via `git ls-files` so an uncommitted `.csproj` in
- * the working tree is intentionally ignored — every other mcp-digger tool
- * also reads from `HEAD`, so the validity criterion matches downstream
- * behaviour.
+ * Reads `HEAD` via `git ls-tree` (not the index via `git ls-files`) so a
+ * staged-but-uncommitted `.csproj` does NOT make the repo pass validation
+ * — every other mcp-digger tool reads from `HEAD` (`git show HEAD:<path>`),
+ * so the validity criterion must match downstream behaviour. Working-tree
+ * and index-only `.csproj` files are intentionally ignored.
  */
 export async function validateNetCSharpRepo(
   repoPath: string,
 ): Promise<RepoValidationResult> {
-  const files = await gitClient.listFiles(repoPath);
+  const files = await gitClient.listHeadFiles(repoPath);
   let count = 0;
   for (const f of files) {
     if (CSPROJ_RE.test(f)) count++;
@@ -34,7 +33,6 @@ export async function validateNetCSharpRepo(
   return {
     valid: count > 0,
     csprojCount: count,
-    checkedPath: repoPath,
   };
 }
 
