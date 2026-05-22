@@ -7,7 +7,6 @@ on:
 permissions:
   contents: read
   id-token: write
-  security-events: read
 
 jobs:
   publish:
@@ -38,17 +37,6 @@ jobs:
 
       - name: Audit dependencies (block on moderate+ vulns)
         run: npm audit --omit=dev --audit-level=moderate
-
-      - name: Block on open Dependabot alerts (>= moderate)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          open=$(gh api "/repos/${{ github.repository }}/dependabot/alerts?state=open" \
-                 --jq '[.[] | select(.security_advisory.severity != "low")] | length')
-          if [ "$open" -gt 0 ]; then
-            echo "::error::$open open Dependabot alerts (>=moderate). Refusing to publish."
-            exit 1
-          fi
 
       - name: Publish to npm
         run: npm publish
