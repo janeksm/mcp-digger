@@ -30,7 +30,8 @@
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
-    "!dist/testHelpers.*"
+    "!dist/testHelpers.*",
+    "server.json"
   ],
   "publishConfig": {
     "access": "public",
