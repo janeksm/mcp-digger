@@ -1,6 +1,6 @@
 # mcp-digger
 
-> **Your internal .NET libraries have source — mcp-digger turns it into the context AI agents need to use your C# APIs correctly**, saving time, tokens, and manual intervention.
+> **Code context for AI coding agents.** Progressive, on-demand access to your internal .NET / NuGet package source — agents browse, search, and read private C# libraries autonomously, with zero workspace pollution.
 
 > ⚠ **Scope: .NET / C# only.** mcp-digger indexes NuGet-style repos containing `.csproj` packages and `.cs` source files. It is not a general-purpose source indexer — other languages (TypeScript, Python, Java, Go, etc.) are out of scope.
 
