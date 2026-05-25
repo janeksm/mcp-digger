@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.janeksm/mcp-digger",
   "title": "mcp-digger",
-  "description": "MCP server giving AI coding agents progressive, on-demand access to .NET C# NuGet package source code.",
+  "description": "Progressive on-demand access to .NET NuGet package source for AI coding agents.",
   "version": "1.1.1",
   "websiteUrl": "https://github.com/janeksm/mcp-digger#readme",
   "repository": {
