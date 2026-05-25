@@ -60,4 +60,19 @@ describe("release metadata (V1)", () => {
     const changelog = read("CHANGELOG.md");
     expect(changelog).toMatch(/^##\s*\[?1\.0\.0\]?/m);
   });
+
+  it("server.json version + packages[0].version match package.json", () => {
+    const pkg = JSON.parse(read("package.json"));
+    const server = JSON.parse(read("server.json"));
+    expect(server.version).toBe(pkg.version);
+    expect(server.packages?.[0]?.version).toBe(pkg.version);
+  });
+
+  it("server.json name matches package.json mcpName", () => {
+    const pkg = JSON.parse(read("package.json"));
+    const server = JSON.parse(read("server.json"));
+    expect(pkg.mcpName).toBeTruthy();
+    expect(server.name).toBe(pkg.mcpName);
+    expect(pkg.mcpName).toMatch(/^io\.github\.[a-z0-9-]+\/[a-z0-9-]+$/i);
+  });
 });
