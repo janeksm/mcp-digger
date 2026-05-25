@@ -302,6 +302,12 @@ Logs go to `.digger/debug.log` (capped at 5 MB, auto-truncated). Critical errors
 
 ---
 
+## 💬 Feedback
+
+Tried mcp-digger on your codebase? Share what worked, what broke, what's missing in [GitHub Discussions](https://github.com/janeksm/mcp-digger/discussions). Bug reports go in [Issues](https://github.com/janeksm/mcp-digger/issues).
+
+---
+
 ## 📜 License
 
 MIT License — see [LICENSE](LICENSE).
