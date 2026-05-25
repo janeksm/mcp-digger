@@ -11,3 +11,4 @@ dist/
 .mcp.json
 .playwright-mcp/
 HANDOFF.md
+parser-poc/

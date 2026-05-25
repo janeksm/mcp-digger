@@ -191,3 +191,57 @@
 | 12 | Java fixture corpus + plugin-level tests | P1 | — | | Build minimal Java fixture repos in `src/plugins/java/__fixtures__/` (or via `initRepo` helpers): single-module Maven, multi-module Maven, single-project Gradle, multi-project Gradle. Mirror `src/testHelpers.ts` pattern with `initJavaMavenRepo` / `initJavaGradleRepo` / `createBareNonJvmRepo`. Each plugin test (4, 5, 6, 7, 8, 9) exercises real fixtures. | `src/plugins/java/__fixtures__/*`, `src/testHelpers.ts` |
 | 13 | End-to-end tool tests with mixed-language config | P2 | — | | Verify `dig_list`, `dig_lookup`, `dig_signatures`, `dig_file`, `dig_status`, `dig_refresh` all work with a config containing both `language: "csharp"` and `language: "java"` repos. Cross-language `dig_lookup` (omit `packageName`) must search both — output groups by repo as today. | `src/tools/*.test.ts`, `src/bootstrap.test.ts` |
 | 14 | README + DESIGN.md + CHANGELOG updates | P2 | — | | Rewrite framing from ".NET only" to "polyglot — .NET + JVM, plugin-based". Document `language` config field. Update validation gate description in DESIGN.md (Shared Conventions). Add v1.1.0 (or v2.0.0 if breaking) entry to CHANGELOG. | `README.md`, `DESIGN.md`, `CHANGELOG.md`, `package.json` |
+
+---
+
+## Phase 12 — Parser Engine Migration (Tree-sitter)
+
+> Replace the hand-written line-state-machine parser (`sourceExtractor.ts` — `analyzeLine`, `stripCsBody`, `scanFileForIndex`, `parseBaseTypes`) with `web-tree-sitter` (WASM) plus per-language grammars. Tree-sitter handles string variants (verbatim `@""`, raw `"""..."""`, Java text blocks), comments, brace counting, generics, and attributes by construction — eliminating the bug class that drove Phases 6, 7, and P10-M2.
+>
+> **Strategic timing:** Do NOT migrate just for better C# correctness — current parser passes 697 tests post-Phase-10 fixes. ROI only kicks in when adding a second language (Phase 11). Adopt tree-sitter at the same time as Phase 11.1 (`LanguagePlugin` interface design) so C# and Java share one engine instead of having two hand parsers to maintain.
+>
+> **Engine choice:** `web-tree-sitter` (WASM), not native `tree-sitter`. Reasons: no native compile / `node-pre-gyp` per-platform builds, no `.node` binaries shipped to sandboxed MCP clients, pure-JS portability. Cost: 3-5× slower than native bindings — still faster than the current hand parser, and parsing is not the hot path (cache hits dominate).
+>
+> **Decision rule:** if Phase 11 is parked indefinitely, skip Phase 12 — current parser is fine. If Phase 11 starts, fold this in as a prerequisite to P11-1.
+
+### POC Findings (2026-05-25)
+
+Ran tree-sitter native (`tree-sitter` + `tree-sitter-c-sharp@0.23.5`) against a fixture (`parser-poc/fixtures.cs`) containing every edge case that drove Phases 6, 7, and P10-M2. Native binding chosen over WASM only because POC is throwaway — production migration would use `web-tree-sitter`.
+
+**Result: all 8 edge-case checks pass with zero parse errors.**
+
+| Check | Hand-parser ticket | Tree-sitter result |
+|---|---|---|
+| Multi-line verbatim string with braces | P7-1 | ✓ class boundary correct, content opaque |
+| C# 11 raw string literal `"""..."""` | P7-2, P10-7/8 | ✓ embedded `{` `}` ignored, span correct |
+| Block comment spanning lines, fake decls inside | P6-2 | ✓ only real method extracted, 0 phantoms |
+| Interpolated string with escaped `{{ }}` | P6-1 | ✓ class boundary unaffected |
+| Generic with multi-constraint `where T : ... new()` | P7-6 | ✓ no angle-depth underflow |
+| Abstract generic class with `: IOrderService where T : Order` | P10-7/8 | ✓ bases=[`IOrderService`] extracted |
+| `public sealed record OrderId(int Value);` | — | ✓ dedicated `record_declaration` node + `parameter_list` |
+| `public readonly struct Money` | — | ✓ modifiers exposed as `modifier` child nodes |
+
+**Grammar AST shape (relevant for Phase 12 P12-3/4 design):**
+
+- Modifiers (`public`, `abstract`, `sealed`, `readonly`, `static`) appear as repeated `modifier` child nodes — not a field. Walk by `child.type === "modifier"`.
+- Type name is a field: `node.childForFieldName("name")`.
+- Base types are exposed as a `base_list` **child type** (NOT a field) — walk children looking for `child.type === "base_list"`, then iterate its `namedChildren` for individual base types. The colon is included in `base_list.text` (`: IOrderService`) but stripped from named children.
+- Method bodies in a `declaration_list` field named `"body"`. Each method = `method_declaration` named child with `name`, `type`, `parameters` fields.
+- Generic parameters in `type_parameter_list` (child type). Constraints in `type_parameter_constraints_clause` (child type, may repeat).
+- Records carry `parameter_list` as a child (positional record params) — must NOT be confused with method `parameters`.
+
+**Design implication for P12-3 (`Parser` plugin contract):** the C# walker is type-driven, not field-driven. The plugin interface should expose `walkChildren(node, predicate)` rather than `getField(node, name)` — fields are a minority of the useful traversal patterns in this grammar.
+
+**Concern surfaced — type-based AST traversal:** `tree-sitter-c-sharp` exposes most structural data as child **types** rather than named **fields**. Example: `base_list` lives at `node.children[i].type === "base_list"` — there is no `node.childForFieldName("bases")`. The POC's first attempt used field-based lookup and silently returned empty base-types for every class (one of the 8 checks failed until traversal was rewritten to walk by type). Implications: (a) plugin code is more verbose than a field-only API would be; (b) any grammar revision could rename node types and break the walker — pin `tree-sitter-c-sharp` to an exact version and add a grammar-version regression test; (c) AST shape must be documented next to the parser implementation, not assumed.
+
+**Risk surface:** the POC fixture only covers parser edge cases. Phase 12 P12-2 (grammar coverage audit) still required before commit — test against C# 12 collection expressions, primary constructors, `required` members, file-scoped namespaces, etc.
+
+| # | Task | Priority | Status | Commit | Rationale | Files |
+|---|------|----------|--------|--------|-----------|-------|
+| 1 | POC: parse Phase 6/7/10 fixtures with `web-tree-sitter` + `tree-sitter-c-sharp` | P1 | done | (local, not committed — `parser-poc/` gitignored) | All 8 edge-case checks pass with zero parse errors against tree-sitter native + `tree-sitter-c-sharp@0.23.5`. AST shape captured above. Native binding used for speed; production migration would use WASM. | `parser-poc/fixtures.cs`, `parser-poc/run.mjs`, `parser-poc/inspect.mjs` |
+| 2 | Grammar coverage audit — modern C# features | P1 | — | | Confirm `tree-sitter-c-sharp` grammar handles: collection expressions (`[1, 2, 3]`), primary constructors, file-scoped namespaces, `required` members, `init` accessors, generic attributes, ref structs, `using` directives in any position, top-level statements. Test against curated `.cs` files using each feature. If gaps found, evaluate forking the grammar vs falling back to hand parser per-feature. | `parser-poc/grammar-audit.test.ts` |
+| 3 | Design `Parser` plugin contract | P1 | — | | Define a parser plugin interface separate from (but consumed by) `LanguagePlugin`: `parseFile(content) → SyntaxTree`, `walkSymbols(tree) → SymbolEntry[]`, `walkSignatures(tree) → StrippedSignature[]`, `walkReferences(tree, keyword) → MatchSpan[]`. Lets the plugin pick tree-sitter, hand parser, or other engines without changing `LanguagePlugin` callers. | `src/parsing/parser.ts` (new) |
+| 4 | C# tree-sitter implementation behind `Parser` interface | P1 | — | | Replace `analyzeLine`, `stripCsBody`, `scanFileForIndex`, `parseBaseTypes` with AST-driven equivalents. Grammar bundled as `.wasm` file in `dist/` (or downloaded on first use). All 160 `sourceExtractor` tests must pass. Phase 6/7/10/M2 regression tests stay green. | `src/parsing/csharp.ts`, `src/parsing/csharp.test.ts` |
+| 5 | Java tree-sitter implementation | P1 | — | | Same shape as C# implementation using `tree-sitter-java` grammar. Pairs with Phase 11 P11-7/8/9 — replaces those hand-parser tasks with grammar-driven equivalents. Reduces Phase 11 scope by ~4 tasks. | `src/parsing/java.ts`, `src/parsing/java.test.ts` |
+| 6 | Performance + binary size measurement | P2 | — | | Benchmark parse time vs current parser on a real `SharedKernel` package (~90 files). Measure npm tarball delta after grammar `.wasm` files added. Document trade-off in `DESIGN.md`. Acceptance gate: parse time ≤ 5× current, total package ≤ 25 MB. | `bench/parser.bench.ts` (new), `DESIGN.md` |
+| 7 | Decommission hand parser code paths | P3 | — | | Once tree-sitter parser passes all tests in production for one minor release, delete `analyzeLine`, `stripCsBody`, `scanFileForIndex`, `parseBaseTypes` and their tests. Keep the file `sourceExtractor.ts` if it still contains non-parser utilities (overview generation, README processing), otherwise delete. | `src/sourceExtractor.ts`, `src/sourceExtractor.test.ts` |
