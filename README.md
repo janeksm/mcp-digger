@@ -140,6 +140,61 @@ args = ["-y", "mcp-digger"]
 ```
 </details>
 
+<details>
+<summary><strong>Claude Desktop</strong></summary>
+
+Add to `claude_desktop_config.json`:
+
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "digger": {
+      "command": "npx",
+      "args": ["-y", "mcp-digger"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>VS Code</strong></summary>
+
+Add to `.vscode/mcp.json` (workspace) or your user `mcp.json`:
+
+```json
+{
+  "servers": {
+    "digger": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "mcp-digger"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Cursor</strong></summary>
+
+Add to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global):
+
+```json
+{
+  "mcpServers": {
+    "digger": {
+      "command": "npx",
+      "args": ["-y", "mcp-digger"]
+    }
+  }
+}
+```
+</details>
+
 ### Verify
 
 Once connected, ask your agent to call `dig_status` — it reports config validation, per-repo connectivity, and index health.
