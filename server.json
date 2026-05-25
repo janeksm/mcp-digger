@@ -3,7 +3,7 @@
   "name": "io.github.janeksm/mcp-digger",
   "title": "mcp-digger",
   "description": "Progressive on-demand access to .NET NuGet package source for AI coding agents.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "websiteUrl": "https://github.com/janeksm/mcp-digger#readme",
   "repository": {
     "url": "https://github.com/janeksm/mcp-digger",
@@ -14,7 +14,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "mcp-digger",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
