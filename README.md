@@ -209,11 +209,11 @@ A `repos[]` entry has three ways to declare packages:
 
 | Option | Behavior |
 |--------|----------|
-| `"packages": ["A", "B"]` | Explicit list — only these packages are exposed |
+| `"packages": ["A", "B"]` | Explicit list — these packages plus any local sibling project they pull in via `<ProjectReference>` (transitive, sibling-only). |
 | `"packageFilter": "MyCompany.*"` | Wildcard — narrows to packages matching the prefix, found via `.sln`/`.slnx`/`Directory.Packages.props` workspace scan. Follows transitive `ProjectReference` links automatically. |
-| *(omit both)* | Auto-discover all non-test `.csproj` directories under `sourceRoot` |
+| *(omit both)* | Auto-discover all non-test `.csproj` directories under `sourceRoot` (recursive — nested layouts supported). |
 
-`sourceRoot` defaults to `"src"` — set it to whichever directory holds your package folders.
+`sourceRoot` defaults to `"src"` — set it to whichever directory holds your package folders. The walk is recursive, so nested layouts like `src/Group/Foo/Foo.csproj` are picked up.
 
 <details>
 <summary><strong>Branch tracking</strong></summary>

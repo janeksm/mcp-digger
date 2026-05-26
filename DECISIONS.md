@@ -2,6 +2,16 @@
 
 > Part of [Cave Man Claude Memory (CMCM)](CAVEMAN_CM.md) — append-only log of non-obvious technical decisions.
 
+## 2026-05-26 — Recursive csproj directory scan over solution-file driven discovery (P7-11)
+
+Chose recursive walk of `sourceRoot` (or whole repo if unset) looking for `{name}/{name}.csproj`, over parsing `.sln`/`.slnx` to enumerate projects.
+Why: simpler, no `.sln` dependency. Reuses existing `TEST_PROJECT_SUFFIXES` + `IGNORED_DIRS` filters. Sln-driven approach adds parser branches (sln text vs slnx XML, multi-sln ambiguity) without solving the case where a csproj exists in the repo but isn't enrolled in any `.sln`. Considered sln-driven for "matches MSBuild semantics" — rejected because mcp-digger exposes published NuGet content, not build targets.
+
+## 2026-05-26 — Transitive `<ProjectReference>` expansion in explicit mode without opt-in flag (P7-11)
+
+Chose to run `expandProjectReferences` in explicit mode by default, mirroring wildcard mode, over adding an `expandTransitive: true` config flag.
+Why: sibling-only filter (target's csproj must exist in the same repo's recursive scan) makes false positives unlikely — references to externally-published NuGet packages never resolve to a candidate. Keeps behaviour consistent across `explicit` / `auto` / `wildcard` modes. Considered opt-in flag for "explicit list stays authoritative" — rejected because the user's reported bug IS that the explicit list isn't authoritative when transitive deps are needed for source browsing; a flag would just relocate the surprise.
+
 ## 2026-05-22 — Validate .NET C# repos via tracked `.csproj` presence, not extra file types
 
 Chose `.csproj` (case-insensitive, non-empty stem) as the sole validity signal for repo classification, over also requiring `.cs` files or accepting `.vbproj`/`.fsproj`.

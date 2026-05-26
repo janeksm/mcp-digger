@@ -910,6 +910,125 @@ describe("discoverPackages", () => {
     expect(result).toHaveLength(1);
     expect(result[0]!.name).toBe("MyCompany.Core");
   });
+
+  // ── Recursive walk (P7-11) ──
+
+  it("finds packages nested deeper than one level under sourceRoot", async () => {
+    const repoDir = path.join(tmpDir, "repo");
+    // Flat sibling
+    fs.mkdirSync(path.join(repoDir, "src/MyCompany.Core"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repoDir, "src/MyCompany.Core/MyCompany.Core.csproj"),
+      "<Project />",
+    );
+    // Nested two levels deep
+    fs.mkdirSync(path.join(repoDir, "src/Group/MyCompany.Nested"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(
+        repoDir,
+        "src/Group/MyCompany.Nested/MyCompany.Nested.csproj",
+      ),
+      "<Project />",
+    );
+    // Nested three levels deep
+    fs.mkdirSync(path.join(repoDir, "src/A/B/MyCompany.Deep"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(repoDir, "src/A/B/MyCompany.Deep/MyCompany.Deep.csproj"),
+      "<Project />",
+    );
+
+    const rc = makeRepoConfig();
+    const result = await discoverPackages(repoDir, rc, "/tmp/cache");
+
+    const byName = new Map(result.map((p) => [p.name, p]));
+    expect(byName.has("MyCompany.Core")).toBe(true);
+    expect(byName.has("MyCompany.Nested")).toBe(true);
+    expect(byName.has("MyCompany.Deep")).toBe(true);
+    expect(byName.get("MyCompany.Core")!.pathInRepo).toBe(
+      "src/MyCompany.Core",
+    );
+    expect(byName.get("MyCompany.Nested")!.pathInRepo).toBe(
+      "src/Group/MyCompany.Nested",
+    );
+    expect(byName.get("MyCompany.Deep")!.pathInRepo).toBe(
+      "src/A/B/MyCompany.Deep",
+    );
+  });
+
+  it("recursive walk still excludes test project suffixes at any depth", async () => {
+    const repoDir = path.join(tmpDir, "repo");
+    fs.mkdirSync(path.join(repoDir, "src/MyCompany.Core"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repoDir, "src/MyCompany.Core/MyCompany.Core.csproj"),
+      "<Project />",
+    );
+    fs.mkdirSync(path.join(repoDir, "src/Sub/MyCompany.Nested.Tests"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(
+        repoDir,
+        "src/Sub/MyCompany.Nested.Tests/MyCompany.Nested.Tests.csproj",
+      ),
+      "<Project />",
+    );
+
+    const rc = makeRepoConfig();
+    const result = await discoverPackages(repoDir, rc, "/tmp/cache");
+
+    expect(result.map((p) => p.name).sort()).toEqual(["MyCompany.Core"]);
+  });
+
+  it("recursive walk skips IGNORED_DIRS under sourceRoot", async () => {
+    const repoDir = path.join(tmpDir, "repo");
+    fs.mkdirSync(path.join(repoDir, "src/MyCompany.Core"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repoDir, "src/MyCompany.Core/MyCompany.Core.csproj"),
+      "<Project />",
+    );
+    // These dirs (even if technically under sourceRoot) should be skipped
+    for (const ignored of ["bin", "obj", "node_modules", ".git"]) {
+      const pkgDir = path.join(repoDir, "src", ignored, "Hidden.Pkg");
+      fs.mkdirSync(pkgDir, { recursive: true });
+      fs.writeFileSync(path.join(pkgDir, "Hidden.Pkg.csproj"), "<Project />");
+    }
+
+    const rc = makeRepoConfig();
+    const result = await discoverPackages(repoDir, rc, "/tmp/cache");
+
+    expect(result.map((p) => p.name).sort()).toEqual(["MyCompany.Core"]);
+  });
+
+  it("prefers shallowest match on dedup when csproj name matches dir at multiple depths", async () => {
+    const repoDir = path.join(tmpDir, "repo");
+    // Shallower (depth 1) variant
+    fs.mkdirSync(path.join(repoDir, "src/MyCompany.Core"), { recursive: true });
+    fs.writeFileSync(
+      path.join(repoDir, "src/MyCompany.Core/MyCompany.Core.csproj"),
+      "<Project />",
+    );
+    // Deeper (depth 2) shadow — must NOT win
+    fs.mkdirSync(
+      path.join(repoDir, "src/Nested/MyCompany.Core"),
+      { recursive: true },
+    );
+    fs.writeFileSync(
+      path.join(repoDir, "src/Nested/MyCompany.Core/MyCompany.Core.csproj"),
+      "<Project />",
+    );
+
+    const rc = makeRepoConfig();
+    const result = await discoverPackages(repoDir, rc, "/tmp/cache");
+
+    // Only one entry, and it must be the shallower path.
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe("MyCompany.Core");
+    expect(result[0]!.pathInRepo).toBe("src/MyCompany.Core");
+  });
 });
 
 // ── Lookup helpers ──

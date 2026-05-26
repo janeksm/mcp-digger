@@ -171,9 +171,14 @@ export async function clone(
 }
 
 /**
- * Fetch latest from origin (shallow).
+ * Fetch latest from origin (shallow), then reset HEAD and working tree to
+ * `FETCH_HEAD` so subsequent `git show HEAD:path` and `fs.readdir` see the new
+ * content. Managed clones are mcp-digger-owned, so discarding any local
+ * working-tree state via `reset --hard` is safe.
  *
  * Uses explicit URL for PAT retry so the token is never persisted in remote config.
+ * Refspec is unified to `branch ?? "HEAD"` across both auth paths so
+ * `FETCH_HEAD` resolves to a single deterministic commit.
  */
 export async function fetch(
   repoDir: string,
@@ -186,10 +191,7 @@ export async function fetch(
     `strategy=${auth.strategy} pat=${auth.pat ? "yes" : "no"} https=${isHttps}` +
     (branch ? ` branch=${branch}` : ""));
   const refspec = branch ?? "HEAD";
-  const baseArgs = ["-C", repoDir, "fetch", "--depth", "1", "origin"];
-  if (branch) {
-    baseArgs.push(branch);
-  }
+  const baseArgs = ["-C", repoDir, "fetch", "--depth", "1", "origin", refspec];
 
   if (auth.strategy === "pat" && auth.pat && remoteUrl) {
     const authUrl = injectPat(remoteUrl, auth.pat);
@@ -199,6 +201,7 @@ export async function fetch(
         auth.pat,
       );
       debug("gitClient", "fetch: success (authenticated via PAT)");
+      await resetHardToFetchHead(repoDir);
       return;
     }
   }
@@ -207,7 +210,6 @@ export async function fetch(
   try {
     await git(baseArgs, undefined, { noPrompt: true });
     debug("gitClient", "fetch: success (unauthenticated)");
-    return;
   } catch (firstErr) {
     const errMsg = firstErr instanceof GitError ? firstErr.message : String(firstErr);
     if (!remoteUrl) {
@@ -226,6 +228,19 @@ export async function fetch(
     );
     debug("gitClient", "fetch: success (authenticated via PAT after retry)");
   }
+  // Reset is intentionally OUTSIDE the fetch try/catch: a reset failure
+  // here would otherwise be misread as a fetch failure and trigger a PAT
+  // retry, hiding the real cause.
+  await resetHardToFetchHead(repoDir);
+}
+
+/**
+ * Reset HEAD and working tree to the commit `FETCH_HEAD` resolves to. Leaves
+ * the repo in detached-HEAD state — acceptable for managed clones where no
+ * code path resolves the local branch ref.
+ */
+async function resetHardToFetchHead(repoDir: string): Promise<void> {
+  await git(["-C", repoDir, "reset", "--hard", "FETCH_HEAD"]);
 }
 
 /** Get the commit hash for a ref (e.g. "HEAD", "FETCH_HEAD"). */

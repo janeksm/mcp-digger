@@ -515,3 +515,93 @@ describe("fetch — branch", () => {
     expect(fetchHead).not.toBe(hashBefore);
   });
 });
+
+// ── fetch updates working tree (P7-11) ──
+
+describe("fetch — updates HEAD and working tree", () => {
+  it("makes new upstream files visible on disk after fetch", async () => {
+    const bareDir = await createBare({
+      "a.txt": "v1",
+      "src/Lib/Lib.csproj": "<Project />",
+    });
+    const cloneDir = path.join(tmpDir, "to-update");
+    await clone(bareDir, cloneDir, noAuth, 1);
+
+    const hashBefore = await revParse(cloneDir, "HEAD");
+    expect(fs.existsSync(path.join(cloneDir, "src/NewPkg/NewPkg.csproj"))).toBe(false);
+
+    // Push new commit adding src/NewPkg/NewPkg.csproj
+    const pushDir = path.join(tmpDir, "pusher");
+    await execFile("git", ["clone", bareDir, pushDir]);
+    await execFile("git", ["-C", pushDir, "config", "user.email", "test@test.com"]);
+    await execFile("git", ["-C", pushDir, "config", "user.name", "Test"]);
+    fs.mkdirSync(path.join(pushDir, "src/NewPkg"), { recursive: true });
+    fs.writeFileSync(path.join(pushDir, "src/NewPkg/NewPkg.csproj"), "<Project />");
+    await execFile("git", ["-C", pushDir, "add", "."]);
+    await execFile("git", ["-C", pushDir, "commit", "-m", "add NewPkg"]);
+    await execFile("git", ["-C", pushDir, "push"]);
+
+    await fetch(cloneDir, noAuth, bareDir);
+
+    // Working tree must reflect new commit (the actual disk state discoverPackages reads)
+    expect(fs.existsSync(path.join(cloneDir, "src/NewPkg/NewPkg.csproj"))).toBe(true);
+    const dirEntries = await fs.promises.readdir(path.join(cloneDir, "src"));
+    expect(dirEntries.sort()).toContain("NewPkg");
+
+    // HEAD must advance to the new commit
+    const hashAfter = await revParse(cloneDir, "HEAD");
+    expect(hashAfter).not.toBe(hashBefore);
+    expect(hashAfter).toMatch(/^[0-9a-f]{40}$/);
+
+    // readFile (git show HEAD:path) must serve new content
+    const csprojContent = await readFile(cloneDir, "src/NewPkg/NewPkg.csproj");
+    expect(csprojContent).toBe("<Project />");
+  });
+
+  it("resets working tree to the configured branch's tip", async () => {
+    const bareDir = await createBareWithBranch(
+      {
+        "default.txt": "on-default",
+        "src/Lib/Lib.csproj": "<Project />",
+      },
+      "develop",
+      { "develop-only.txt": "branch-only" },
+    );
+    const cloneDir = path.join(tmpDir, "fetch-branch-reset");
+    await clone(bareDir, cloneDir, noAuth, 1, "develop");
+
+    // Push a new file onto develop after clone
+    const pushDir = path.join(tmpDir, "pusher-branch");
+    await execFile("git", ["clone", "-b", "develop", bareDir, pushDir]);
+    await execFile("git", ["-C", pushDir, "config", "user.email", "test@test.com"]);
+    await execFile("git", ["-C", pushDir, "config", "user.name", "Test"]);
+    fs.writeFileSync(path.join(pushDir, "develop-after.txt"), "added on develop");
+    await execFile("git", ["-C", pushDir, "add", "."]);
+    await execFile("git", ["-C", pushDir, "commit", "-m", "add file on develop"]);
+    await execFile("git", ["-C", pushDir, "push"]);
+
+    expect(fs.existsSync(path.join(cloneDir, "develop-after.txt"))).toBe(false);
+
+    await fetch(cloneDir, noAuth, bareDir, "develop");
+
+    expect(fs.existsSync(path.join(cloneDir, "develop-after.txt"))).toBe(true);
+  });
+
+  it("leaves single-line FETCH_HEAD even when no branch is configured", async () => {
+    // Without a refspec, `git fetch origin` can produce a multi-line FETCH_HEAD.
+    // With unified refspec (branch ?? "HEAD"), it must be a single hash so
+    // reset --hard FETCH_HEAD is deterministic.
+    const bareDir = await createBare({ "a.txt": "v1" });
+    const cloneDir = path.join(tmpDir, "fetch-single");
+    await clone(bareDir, cloneDir, noAuth, 1);
+
+    await fetch(cloneDir, noAuth, bareDir);
+
+    const fetchHeadFile = await fs.promises.readFile(
+      path.join(cloneDir, ".git", "FETCH_HEAD"),
+      "utf-8",
+    );
+    const lines = fetchHeadFile.trimEnd().split("\n").filter((l) => l.length > 0);
+    expect(lines).toHaveLength(1);
+  });
+});

@@ -49,3 +49,15 @@ Examples: src/tools/digLookup.ts, src/tools/digRefresh.ts, src/tools/digList.ts,
 When: Debug logging from any module
 Shape: `debug(tag, ...args)` — buffers before `initLogger()`, writes to `.digger/debug.log` after. Enabled via `"debug": true` in config. Two-phase init with pre-init buffering.
 Examples: src/logger.ts, used across all modules
+
+## recursive-tree-walk-skip-ignored
+
+When: Walking a repo/workspace tree to collect files or directories matching a predicate
+Shape: Depth-first `fs.promises.readdir(..., {withFileTypes: true})`, sort entries alphabetically for determinism, skip symlinks, skip names in shared `IGNORED_DIRS` set (`.git`, `.digger`, `node_modules`, `bin`, `obj`, `.vs`, `.idea`, `packages`), apply per-walk filter (e.g. test-suffix exclusion), recurse into surviving subdirectories. Each call site duplicates its own `IGNORED_DIRS` set with identical contents — kept in lockstep by convention since the workspace scan and source-repo scan must ignore the same noise.
+Examples: src/solutionScanner.ts (`walkTree`), src/config.ts (`walkPackageDirs`)
+
+## fetch-resets-managed-clone
+
+When: A managed shallow clone needs to pull upstream changes before disk-walking tools (`fs.readdir`) or HEAD-relative reads (`git show HEAD:path`) consume the new content
+Shape: `git fetch --depth 1 origin <branch ?? "HEAD">` followed by `git reset --hard FETCH_HEAD` — same refspec across all auth paths so `FETCH_HEAD` resolves to a single deterministic commit. Reset is OUTSIDE the fetch try/catch so a reset failure isn't misread as a fetch failure and trigger a PAT retry. Mode B (local repos) skip this — user owns the working tree. Managed clones run in detached-HEAD state after first fetch.
+Examples: src/gitClient.ts (`fetch`, `resetHardToFetchHead`)

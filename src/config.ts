@@ -125,6 +125,22 @@ const TEST_PROJECT_SUFFIXES = [
   ".IntegrationTests",
 ];
 
+/**
+ * Directory names skipped by `discoverPackages` recursive walk. Mirrors the
+ * set in `solutionScanner.ts` for consistency — workspace and source-repo
+ * scans should ignore the same noise.
+ */
+const IGNORED_DIRS: ReadonlySet<string> = new Set([
+  ".git",
+  ".digger",
+  "node_modules",
+  "bin",
+  "obj",
+  ".vs",
+  ".idea",
+  "packages",
+]);
+
 // ── Helpers ──
 
 const SAFE_NAME_RE = /^[A-Za-z0-9._-]+$/;
@@ -607,65 +623,103 @@ export function loadConfig(
 // ── Phase 2: discoverPackages (async, after repo is on disk) ──
 
 /**
- * Scan a repo on disk to find packages by looking for directories under
- * `{repoPath}/{sourceRoot}/` that contain a matching `.csproj` file.
+ * Scan a repo on disk to find packages by recursively walking under
+ * `{repoPath}/{sourceRoot}/` for directories that contain a matching
+ * `{dirName}/{dirName}.csproj`.
  *
- * Excludes test projects (`.Tests`, `.Specs`, `.Benchmarks`, `.IntegrationTests`).
+ * Skips `IGNORED_DIRS` (`.git`, `.digger`, `node_modules`, `bin`, `obj`,
+ * `.vs`, `.idea`, `packages`), test projects (`TEST_PROJECT_SUFFIXES`),
+ * symlinks, and directories with invalid names. Dedupes by package name
+ * preferring the shallowest depth (shadow projects in deeper subtrees do
+ * not override real projects). Caps at `MAX_DISCOVERED_PACKAGES`.
  *
- * Call this for repos with `discoveryMode === "auto"` after the repo is cloned
- * or located locally.
+ * Call this for repos with `discoveryMode === "auto"` or `"wildcard"` after
+ * the repo is cloned or located locally; the explicit-mode call site in
+ * `repoManager.ensureReady` also uses this output to expand transitive
+ * `<ProjectReference>` siblings.
  */
+interface WalkCtx {
+  repoPath: string;
+  repoName: string;
+  cacheDir: string;
+  found: Map<string, { pkg: PackageConfig; depth: number }>;
+}
+
 export async function discoverPackages(
   repoPath: string,
   repoConfig: RepoConfig,
   cacheDir: string,
 ): Promise<PackageConfig[]> {
-  const searchDir = path.join(repoPath, repoConfig.sourceRoot);
+  const ctx: WalkCtx = {
+    repoPath,
+    repoName: repoConfig.name,
+    cacheDir,
+    found: new Map(),
+  };
 
+  await walkPackageDirs(ctx, path.join(repoPath, repoConfig.sourceRoot), 0);
+
+  const all = Array.from(ctx.found.values()).map((e) => e.pkg);
+  if (all.length > MAX_DISCOVERED_PACKAGES) {
+    debug("config", `discoverPackages: ${all.length} candidates exceeds cap of ${MAX_DISCOVERED_PACKAGES}, truncating`);
+    return all.slice(0, MAX_DISCOVERED_PACKAGES);
+  }
+  return all;
+}
+
+async function walkPackageDirs(ctx: WalkCtx, dir: string, depth: number): Promise<void> {
   let entries: fs.Dirent[];
   try {
-    entries = await fs.promises.readdir(searchDir, { withFileTypes: true });
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
   } catch {
-    return [];
+    return;
   }
 
-  const allCandidates = entries.filter((e) => {
-    if (!e.isDirectory() || e.isSymbolicLink()) return false;
-    if (TEST_PROJECT_SUFFIXES.some((s) => e.name.endsWith(s))) return false;
-    if (!isValidPackageName(e.name)) {
-      debug("config", "discoverPackages: skipping directory with invalid name:", e.name);
-      return false;
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+    if (IGNORED_DIRS.has(entry.name)) continue;
+    if (TEST_PROJECT_SUFFIXES.some((s) => entry.name.endsWith(s))) continue;
+
+    const entryPath = path.join(dir, entry.name);
+    const csprojPath = path.join(entryPath, `${entry.name}.csproj`);
+    let hasMatchingCsproj = false;
+    try {
+      await fs.promises.access(csprojPath);
+      hasMatchingCsproj = true;
+    } catch {
+      // No matching csproj at this level.
     }
-    return true;
-  });
 
-  if (allCandidates.length > MAX_DISCOVERED_PACKAGES) {
-    debug("config", `discoverPackages: ${allCandidates.length} candidates exceeds cap of ${MAX_DISCOVERED_PACKAGES}, truncating`);
-  }
-  const candidates = allCandidates.slice(0, MAX_DISCOVERED_PACKAGES);
-
-  const results = await Promise.all(
-    candidates.map(async (entry) => {
-      const csprojPath = path.join(
-        searchDir,
-        entry.name,
-        `${entry.name}.csproj`,
-      );
-      try {
-        await fs.promises.access(csprojPath);
-      } catch {
-        return null;
+    if (hasMatchingCsproj) {
+      if (isValidPackageName(entry.name)) {
+        recordPackage(ctx, entry.name, entryPath, depth);
+      } else {
+        debug("config", "discoverPackages: skipping directory with invalid name:", entry.name);
       }
-      return buildPackageConfig(
-        entry.name,
-        repoConfig.name,
-        repoConfig.sourceRoot,
-        cacheDir,
-      );
-    }),
-  );
+    }
 
-  return results.filter((r): r is PackageConfig => r !== null);
+    // Always recurse — grouping containers may have non-package names
+    // (e.g. "Common Libraries"), and a real package dir can host nested
+    // sub-packages. IGNORED_DIRS + TEST_PROJECT_SUFFIXES bound the noise.
+    await walkPackageDirs(ctx, entryPath, depth + 1);
+  }
+}
+
+function recordPackage(ctx: WalkCtx, name: string, dir: string, depth: number): void {
+  const existing = ctx.found.get(name);
+  if (existing && depth >= existing.depth) return; // prefer shallowest
+  const pathInRepo = path.relative(ctx.repoPath, dir).replace(/\\/g, "/");
+  ctx.found.set(name, {
+    pkg: {
+      name,
+      repoName: ctx.repoName,
+      pathInRepo,
+      cachePath: path.join(ctx.cacheDir, name),
+    },
+    depth,
+  });
 }
 
 // ── Lookup helper ──

@@ -418,6 +418,250 @@ describe("ensureReady — wildcard mode", () => {
   });
 });
 
+// ── Explicit + transitive ProjectReference expansion (P7-11) ──
+
+describe("ensureReady — explicit + transitive ProjectReference", () => {
+  it("auto-adds a sibling project referenced via ProjectReference (BSF.Mediator case)", async () => {
+    const localRepo = await initRepo({
+      "src/BSF.Mediator/BSF.Mediator.csproj": "<Project />",
+      "src/BSF.SharedKernel/BSF.SharedKernel.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\BSF.Mediator\\BSF.Mediator.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    const repo = makeRepoConfig({
+      name: "BSF.NuGet",
+      localPath: localRepo,
+      packages: [
+        {
+          name: "BSF.SharedKernel",
+          repoName: "BSF.NuGet",
+          pathInRepo: "src/BSF.SharedKernel",
+          cachePath: path.join(tmpDir, "cache", "BSF.SharedKernel"),
+        },
+      ],
+    });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    const names = repo.packages.map((p) => p.name).sort();
+    expect(names).toEqual(["BSF.Mediator", "BSF.SharedKernel"]);
+  });
+
+  it("follows multi-hop chain in explicit mode A → B → C", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.A/MyCompany.A.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\MyCompany.B\\MyCompany.B.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/MyCompany.B/MyCompany.B.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\MyCompany.C\\MyCompany.C.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/MyCompany.C/MyCompany.C.csproj": "<Project />",
+    });
+    const repo = makeRepoConfig({
+      name: "mylib",
+      localPath: localRepo,
+      packages: [
+        {
+          name: "MyCompany.A",
+          repoName: "mylib",
+          pathInRepo: "src/MyCompany.A",
+          cachePath: path.join(tmpDir, "cache", "MyCompany.A"),
+        },
+      ],
+    });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    expect(repo.packages.map((p) => p.name).sort()).toEqual([
+      "MyCompany.A",
+      "MyCompany.B",
+      "MyCompany.C",
+    ]);
+  });
+
+  it("does not expand to projects missing on disk (explicit mode)", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\MyCompany.Missing\\MyCompany.Missing.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    const repo = makeRepoConfig({
+      name: "mylib",
+      localPath: localRepo,
+      packages: [
+        {
+          name: "MyCompany.Core",
+          repoName: "mylib",
+          pathInRepo: "src/MyCompany.Core",
+          cachePath: path.join(tmpDir, "cache", "MyCompany.Core"),
+        },
+      ],
+    });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    expect(repo.packages.map((p) => p.name)).toEqual(["MyCompany.Core"]);
+  });
+
+  it("handles cycles in explicit mode without infinite loop", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.A/MyCompany.A.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\MyCompany.B\\MyCompany.B.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/MyCompany.B/MyCompany.B.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\MyCompany.A\\MyCompany.A.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    const repo = makeRepoConfig({
+      name: "mylib",
+      localPath: localRepo,
+      packages: [
+        {
+          name: "MyCompany.A",
+          repoName: "mylib",
+          pathInRepo: "src/MyCompany.A",
+          cachePath: path.join(tmpDir, "cache", "MyCompany.A"),
+        },
+      ],
+    });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    expect(repo.packages.map((p) => p.name).sort()).toEqual([
+      "MyCompany.A",
+      "MyCompany.B",
+    ]);
+  });
+
+  it("leaves explicit packages unchanged when no ProjectReferences exist", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": "<Project />",
+      "src/MyCompany.Auth/MyCompany.Auth.csproj": "<Project />",
+      "src/MyCompany.Unused/MyCompany.Unused.csproj": "<Project />",
+    });
+    const repo = makeRepoConfig({
+      name: "mylib",
+      localPath: localRepo,
+      packages: [
+        {
+          name: "MyCompany.Core",
+          repoName: "mylib",
+          pathInRepo: "src/MyCompany.Core",
+          cachePath: path.join(tmpDir, "cache", "MyCompany.Core"),
+        },
+      ],
+    });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    // Unused sibling not pulled in because no ProjectReference targets it
+    expect(repo.packages.map((p) => p.name)).toEqual(["MyCompany.Core"]);
+  });
+
+  it("uses exact name matching, never prefix, for sibling resolution", async () => {
+    const localRepo = await initRepo({
+      "src/BSF.Core/BSF.Core.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\BSF.Mediator\\BSF.Mediator.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/BSF.Mediator/BSF.Mediator.csproj": "<Project />",
+      "src/BSF.Mediator.Tests/BSF.Mediator.Tests.csproj": "<Project />",
+      "src/BSF.MediatorExtra/BSF.MediatorExtra.csproj": "<Project />",
+    });
+    const repo = makeRepoConfig({
+      name: "mylib",
+      localPath: localRepo,
+      packages: [
+        {
+          name: "BSF.Core",
+          repoName: "mylib",
+          pathInRepo: "src/BSF.Core",
+          cachePath: path.join(tmpDir, "cache", "BSF.Core"),
+        },
+      ],
+    });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    // Only BSF.Mediator added (exact name match). Not BSF.MediatorExtra
+    // (prefix match would erroneously include it). Tests filter excludes
+    // BSF.Mediator.Tests via TEST_PROJECT_SUFFIXES.
+    expect(repo.packages.map((p) => p.name).sort()).toEqual([
+      "BSF.Core",
+      "BSF.Mediator",
+    ]);
+  });
+
+  it("is idempotent — calling ensureReady twice does not duplicate transitive deps", async () => {
+    const localRepo = await initRepo({
+      "src/BSF.Mediator/BSF.Mediator.csproj": "<Project />",
+      "src/BSF.SharedKernel/BSF.SharedKernel.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\BSF.Mediator\\BSF.Mediator.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    const repo = makeRepoConfig({
+      name: "BSF.NuGet",
+      localPath: localRepo,
+      packages: [
+        {
+          name: "BSF.SharedKernel",
+          repoName: "BSF.NuGet",
+          pathInRepo: "src/BSF.SharedKernel",
+          cachePath: path.join(tmpDir, "cache", "BSF.SharedKernel"),
+        },
+      ],
+    });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+    const namesAfterFirst = repo.packages.map((p) => p.name).sort();
+
+    await ensureAllReady(config);
+    const namesAfterSecond = repo.packages.map((p) => p.name).sort();
+
+    expect(namesAfterFirst).toEqual(["BSF.Mediator", "BSF.SharedKernel"]);
+    expect(namesAfterSecond).toEqual(namesAfterFirst);
+    expect(repo.packages).toHaveLength(2);
+  });
+});
+
 // ── Wildcard transitive ProjectReference expansion ──
 
 describe("ensureReady — wildcard transitive ProjectReference", () => {

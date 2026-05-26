@@ -142,6 +142,26 @@ export async function ensureReady(
     }
   }
 
+  // Explicit: normalize each listed package's pathInRepo from the recursive
+  // candidate scan (config-time guess `${sourceRoot}/${name}` is wrong for
+  // nested layouts) and expand transitive ProjectReference siblings so a
+  // listed package's local deps (`..\Sibling\Sibling.csproj`) get exposed
+  // even when the user did not enumerate them. Sibling-only filter — only
+  // adds when target exists in the same repo's candidate map (no prefix
+  // matching).
+  if (repoConfig.discoveryMode === "explicit" && repoConfig.packages.length > 0) {
+    const candidates = await discoverPackages(
+      result.sourcePath,
+      repoConfig,
+      config.cacheDir,
+    );
+    const candidateMap = new Map(candidates.map((c) => [c.name, c]));
+    repoConfig.packages = repoConfig.packages.map(
+      (pkg) => candidateMap.get(pkg.name) ?? pkg,
+    );
+    await expandProjectReferences(result.sourcePath, repoConfig, candidates);
+  }
+
   return result;
 }
 
@@ -205,9 +225,10 @@ async function ensureManaged(
     await gitClient.fetch(targetDir, repoConfig.auth, repoConfig.url, repoConfig.branch);
   }
 
-  // For fresh clones HEAD is already the latest; for fetched repos use FETCH_HEAD
-  const ref = alreadyCloned ? "FETCH_HEAD" : "HEAD";
-  const currentHash = await gitClient.revParse(targetDir, ref);
+  // After clone HEAD is at the cloned tip; after fetch + reset --hard
+  // FETCH_HEAD (inside gitClient.fetch) HEAD has also been moved to the
+  // freshly-fetched commit. Either way, HEAD is the right ref to read.
+  const currentHash = await gitClient.revParse(targetDir, "HEAD");
 
   return {
     sourcePath: targetDir,
@@ -301,7 +322,9 @@ async function expandProjectReferences(
   repoConfig: RepoConfig,
   candidates: PackageConfig[],
 ): Promise<void> {
-  const prefix = filterPrefix(repoConfig.packageFilter!);
+  // Explicit mode has no packageFilter — empty prefix is a no-op gate so
+  // the sibling-in-candidateMap check becomes the only filter.
+  const prefix = repoConfig.packageFilter ? filterPrefix(repoConfig.packageFilter) : "";
   const candidateMap = new Map(candidates.map((c) => [c.name, c]));
   const matched = new Set(repoConfig.packages.map((p) => p.name));
   const queue = [...matched];
