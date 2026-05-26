@@ -16,6 +16,9 @@ import {
 
 const PROJECT_REFERENCE_RE =
   /<ProjectReference\s+[^>]*Include\s*=\s*"([^"]+)"/gi;
+const PACKAGE_REFERENCE_TAG_RE = /<PackageReference\b([^>]*)>/gi;
+const PACKAGE_REFERENCE_INCLUDE_RE = /\bInclude\s*=\s*["']([^"']+)["']/i;
+const PACKAGE_REFERENCE_VERSION_RE = /\bVersion(?:Override)?\s*=/i;
 
 // ── Result type ──
 
@@ -144,8 +147,8 @@ export async function ensureReady(
 
   // Explicit: normalize each listed package's pathInRepo from the recursive
   // candidate scan (config-time guess `${sourceRoot}/${name}` is wrong for
-  // nested layouts) and expand transitive ProjectReference siblings so a
-  // listed package's local deps (`..\Sibling\Sibling.csproj`) get exposed
+  // nested layouts) and expand transitive ProjectReference + CPM-style
+  // PackageReference siblings so a listed package's local deps get exposed
   // even when the user did not enumerate them. Sibling-only filter — only
   // adds when target exists in the same repo's candidate map (no prefix
   // matching).
@@ -298,7 +301,7 @@ function buildWildcardEmptyError(
   );
 }
 
-// ── Transitive ProjectReference expansion ──
+// ── Transitive ProjectReference / PackageReference expansion ──
 
 export function extractProjectReferenceNames(csprojContent: string): string[] {
   PROJECT_REFERENCE_RE.lastIndex = 0;
@@ -317,6 +320,39 @@ export function extractProjectReferenceNames(csprojContent: string): string[] {
   return names;
 }
 
+/**
+ * Extract Include names from CPM-style `<PackageReference>` tags — refs whose
+ * version is centralised in `Directory.Packages.props` (no inline `Version` or
+ * `VersionOverride` attribute). Versioned refs are skipped: they signal a
+ * non-CPM pin, where the sibling depends on the published NuGet rather than
+ * the local source. Supports both `Include="X"` and `Include='X'` quoting.
+ */
+export function extractCpmPackageReferenceNames(csprojContent: string): string[] {
+  PACKAGE_REFERENCE_TAG_RE.lastIndex = 0;
+  const names: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = PACKAGE_REFERENCE_TAG_RE.exec(csprojContent)) !== null) {
+    const attrs = m[1];
+    if (!attrs) continue;
+    if (PACKAGE_REFERENCE_VERSION_RE.test(attrs)) continue;
+    const include = PACKAGE_REFERENCE_INCLUDE_RE.exec(attrs);
+    if (include && include[1]) names.push(include[1]);
+  }
+  return names;
+}
+
+/**
+ * BFS-walk each resolved package's `.csproj`, following both
+ * `<ProjectReference Include="..\\Sibling\\Sibling.csproj">` (path-based) and
+ * `<PackageReference Include="Sibling">` (CPM-style, version centralised in
+ * `Directory.Packages.props`). Adds the referenced project when it exists as a
+ * candidate in the same repo's recursive discovery output (sibling-only filter)
+ * and, for wildcard mode, when it matches the `packageFilter` prefix.
+ *
+ * Externally-published NuGet packages (target absent from `candidateMap`) are
+ * silently ignored — that gate is what makes the CPM `<PackageReference>` walk
+ * safe even though most of those refs point outside the repo.
+ */
 async function expandProjectReferences(
   sourcePath: string,
   repoConfig: RepoConfig,
@@ -347,7 +383,11 @@ async function expandProjectReferences(
       continue;
     }
 
-    for (const refName of extractProjectReferenceNames(content)) {
+    const refs = [
+      ...extractProjectReferenceNames(content),
+      ...extractCpmPackageReferenceNames(content),
+    ];
+    for (const refName of refs) {
       if (matched.has(refName)) continue;
       if (!refName.startsWith(prefix)) continue;
       const candidate = candidateMap.get(refName);

@@ -5,7 +5,12 @@ import * as path from "node:path";
 import * as util from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { RepoConfig } from "./config.js";
-import { ensureAllReady, ensureReady, extractProjectReferenceNames } from "./repoManager.js";
+import {
+  ensureAllReady,
+  ensureReady,
+  extractCpmPackageReferenceNames,
+  extractProjectReferenceNames,
+} from "./repoManager.js";
 import { scanCachePath } from "./solutionScanner.js";
 import {
   cleanupTmpDir,
@@ -662,6 +667,179 @@ describe("ensureReady — explicit + transitive ProjectReference", () => {
   });
 });
 
+// ── Explicit + transitive PackageReference (CPM, P7-12) ──
+
+describe("ensureReady — explicit + transitive PackageReference (CPM)", () => {
+  it("auto-adds a sibling project referenced via CPM-style PackageReference (no Version)", async () => {
+    const localRepo = await initRepo({
+      "src/BSF.Mediator/BSF.Mediator.csproj": "<Project />",
+      "src/BSF.SharedKernel/BSF.SharedKernel.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <PackageReference Include="BSF.Mediator" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    const repo = makeRepoConfig({
+      name: "BSF.NuGet",
+      localPath: localRepo,
+      packages: [
+        {
+          name: "BSF.SharedKernel",
+          repoName: "BSF.NuGet",
+          pathInRepo: "src/BSF.SharedKernel",
+          cachePath: path.join(tmpDir, "cache", "BSF.SharedKernel"),
+        },
+      ],
+    });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    const names = repo.packages.map((p) => p.name).sort();
+    expect(names).toEqual(["BSF.Mediator", "BSF.SharedKernel"]);
+  });
+
+  it("excludes externally-published PackageReference (target not in candidate map)", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />',
+        '    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    const repo = makeRepoConfig({
+      name: "mylib",
+      localPath: localRepo,
+      packages: [
+        {
+          name: "MyCompany.Core",
+          repoName: "mylib",
+          pathInRepo: "src/MyCompany.Core",
+          cachePath: path.join(tmpDir, "cache", "MyCompany.Core"),
+        },
+      ],
+    });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    expect(repo.packages.map((p) => p.name)).toEqual(["MyCompany.Core"]);
+  });
+
+  it("follows multi-hop chain mixing ProjectReference and PackageReference", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.A/MyCompany.A.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <ProjectReference Include="..\\MyCompany.B\\MyCompany.B.csproj" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/MyCompany.B/MyCompany.B.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <PackageReference Include="MyCompany.C" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/MyCompany.C/MyCompany.C.csproj": "<Project />",
+    });
+    const repo = makeRepoConfig({
+      name: "mylib",
+      localPath: localRepo,
+      packages: [
+        {
+          name: "MyCompany.A",
+          repoName: "mylib",
+          pathInRepo: "src/MyCompany.A",
+          cachePath: path.join(tmpDir, "cache", "MyCompany.A"),
+        },
+      ],
+    });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    expect(repo.packages.map((p) => p.name).sort()).toEqual([
+      "MyCompany.A",
+      "MyCompany.B",
+      "MyCompany.C",
+    ]);
+  });
+
+  it("skips versioned PackageReference even when target sibling exists on disk", async () => {
+    // A sibling-named package present on disk should NOT auto-expand when the
+    // ref carries an inline Version — the user is pinning the published NuGet,
+    // not depending on the local source.
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": "<Project />",
+      "src/MyCompany.Auth/MyCompany.Auth.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <PackageReference Include="MyCompany.Core" Version="1.2.3" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    const repo = makeRepoConfig({
+      name: "mylib",
+      localPath: localRepo,
+      packages: [
+        {
+          name: "MyCompany.Auth",
+          repoName: "mylib",
+          pathInRepo: "src/MyCompany.Auth",
+          cachePath: path.join(tmpDir, "cache", "MyCompany.Auth"),
+        },
+      ],
+    });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    expect(repo.packages.map((p) => p.name)).toEqual(["MyCompany.Auth"]);
+  });
+
+  it("uses exact name matching for PackageReference sibling resolution", async () => {
+    const localRepo = await initRepo({
+      "src/BSF.Core/BSF.Core.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <PackageReference Include="BSF.Mediator" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/BSF.Mediator/BSF.Mediator.csproj": "<Project />",
+      "src/BSF.MediatorExtra/BSF.MediatorExtra.csproj": "<Project />",
+    });
+    const repo = makeRepoConfig({
+      name: "mylib",
+      localPath: localRepo,
+      packages: [
+        {
+          name: "BSF.Core",
+          repoName: "mylib",
+          pathInRepo: "src/BSF.Core",
+          cachePath: path.join(tmpDir, "cache", "BSF.Core"),
+        },
+      ],
+    });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    expect(repo.packages.map((p) => p.name).sort()).toEqual([
+      "BSF.Core",
+      "BSF.Mediator",
+    ]);
+  });
+});
+
 // ── Wildcard transitive ProjectReference expansion ──
 
 describe("ensureReady — wildcard transitive ProjectReference", () => {
@@ -815,6 +993,51 @@ describe("ensureReady — wildcard transitive ProjectReference", () => {
     const names = repo.packages.map((p) => p.name).sort();
     expect(names).toEqual(["MyCompany.Auth", "MyCompany.Core"]);
   });
+
+  it("includes single-hop CPM-style PackageReference transitive dependency", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": "<Project />",
+      "src/MyCompany.Data/MyCompany.Data.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <PackageReference Include="MyCompany.Core" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+    });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["MyCompany.Data"]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    const names = repo.packages.map((p) => p.name).sort();
+    expect(names).toEqual(["MyCompany.Core", "MyCompany.Data"]);
+  });
+
+  it("excludes CPM-style PackageReference outside prefix filter", async () => {
+    const localRepo = await initRepo({
+      "src/MyCompany.Core/MyCompany.Core.csproj": [
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        "  <ItemGroup>",
+        '    <PackageReference Include="ThirdParty.Lib" />',
+        "  </ItemGroup>",
+        "</Project>",
+      ].join("\n"),
+      "src/ThirdParty.Lib/ThirdParty.Lib.csproj": "<Project />",
+    });
+    writeCsprojFile(path.join(tmpDir, "App/App.csproj"), ["MyCompany.Core"]);
+    writeSlnFile(tmpDir, "S.sln", ["App/App.csproj"]);
+
+    const repo = makeWildcardRepo("MyCompany.Libs", { packageFilter: "MyCompany.*", localPath: localRepo });
+    const config = makeConfig([repo]);
+
+    await ensureAllReady(config);
+
+    expect(repo.packages.map((p) => p.name)).toEqual(["MyCompany.Core"]);
+  });
 });
 
 // ── .NET C# repo validation ──
@@ -959,6 +1182,62 @@ describe("extractProjectReferenceNames", () => {
   it("returns empty array for XML without ProjectReferences", () => {
     const xml = '<Project Sdk="Microsoft.NET.Sdk"><ItemGroup /></Project>';
     expect(extractProjectReferenceNames(xml)).toEqual([]);
+  });
+});
+
+// ── extractCpmPackageReferenceNames (CPM) ──
+
+describe("extractCpmPackageReferenceNames", () => {
+  it("extracts single CPM-style PackageReference name (no Version)", () => {
+    const xml = '<PackageReference Include="BSF.Mediator" />';
+    expect(extractCpmPackageReferenceNames(xml)).toEqual(["BSF.Mediator"]);
+  });
+
+  it("extracts only the unversioned PackageReferences from a mixed list", () => {
+    const xml = [
+      "<ItemGroup>",
+      '  <PackageReference Include="A" />',
+      '  <PackageReference Include="B" Version="1.0" />',
+      '  <PackageReference Include="C" />',
+      "</ItemGroup>",
+    ].join("\n");
+    expect(extractCpmPackageReferenceNames(xml)).toEqual(["A", "C"]);
+  });
+
+  it("skips PackageReference with inline Version", () => {
+    const xml = '<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />';
+    expect(extractCpmPackageReferenceNames(xml)).toEqual([]);
+  });
+
+  it("skips PackageReference with VersionOverride", () => {
+    const xml = '<PackageReference Include="Foo" VersionOverride="2.0" />';
+    expect(extractCpmPackageReferenceNames(xml)).toEqual([]);
+  });
+
+  it("supports single-quoted Include attribute", () => {
+    const xml = "<PackageReference Include='BSF.Mediator' />";
+    expect(extractCpmPackageReferenceNames(xml)).toEqual(["BSF.Mediator"]);
+  });
+
+  it("returns empty array for XML without PackageReferences", () => {
+    const xml = '<Project Sdk="Microsoft.NET.Sdk"><ItemGroup /></Project>';
+    expect(extractCpmPackageReferenceNames(xml)).toEqual([]);
+  });
+
+  it("ignores PackageReference without Include attribute", () => {
+    const xml = '<PackageReference Version="1.0" />';
+    expect(extractCpmPackageReferenceNames(xml)).toEqual([]);
+  });
+
+  it("extracts ProjectReference and PackageReference independently from same XML", () => {
+    const xml = [
+      "<ItemGroup>",
+      '  <ProjectReference Include="..\\Sibling\\Sibling.csproj" />',
+      '  <PackageReference Include="External.Pkg" />',
+      "</ItemGroup>",
+    ].join("\n");
+    expect(extractProjectReferenceNames(xml)).toEqual(["Sibling"]);
+    expect(extractCpmPackageReferenceNames(xml)).toEqual(["External.Pkg"]);
   });
 });
 
