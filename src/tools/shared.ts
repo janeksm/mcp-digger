@@ -22,11 +22,18 @@ export function toolError(text: string): ToolResult {
   return { text, isError: true };
 }
 
-export function toCallToolResult(result: ToolResult) {
-  return {
-    content: [{ type: "text" as const, text: result.text }],
-    ...(result.isError && { isError: true }),
+export interface CallToolWireResult {
+  [x: string]: unknown;
+  content: Array<{ type: "text"; text: string }>;
+  isError?: true;
+}
+
+export function toCallToolResult(result: ToolResult): CallToolWireResult {
+  const wire: CallToolWireResult = {
+    content: [{ type: "text", text: result.text }],
   };
+  if (result.isError) wire.isError = true;
+  return wire;
 }
 
 export const TOOL_ANNOTATIONS = {
@@ -66,7 +73,12 @@ export function requirePackage(
 ): { pkg: PackageConfig; repo: RepoConfig } | ToolResult {
   const pkg = findPackage(config, packageName);
   if (!pkg) return toolError(formatUnknownPackage(config, packageName));
-  const repo = config.repos.find((r) => r.name === pkg.repoName)!;
+  const repo = config.repos.find((r) => r.name === pkg.repoName);
+  if (!repo) {
+    throw new Error(
+      `Internal invariant: package '${packageName}' references unknown repo '${pkg.repoName}'`,
+    );
+  }
   return { pkg, repo };
 }
 
