@@ -23,8 +23,9 @@ Read `TODO.md` to find the step:
 ### 2. Simplify (analyze + fix)
 
 Review changed files and apply simplification fixes:
+- **Read `CC.md` first** — Node.js / TypeScript clean code rules apply here as the simplify checklist.
 - Run `git diff HEAD` to identify changed files and hunks.
-- For each changed area, check for: deep nesting (use guard clauses), long functions (split), generic names (make descriptive), dead code (remove), redundant abstractions (inline), unnecessary comments (delete).
+- For each changed area, check for: deep nesting (use guard clauses), long functions (split), generic names (make descriptive), dead code (remove), redundant abstractions (inline), unnecessary comments (delete), plus the rules in `CC.md` (non-null assertions, floating promises, `any` types, missing return types on exports, etc.).
 - Apply fixes incrementally — one at a time.
 - After all simplify fixes, verify: run `npm run typecheck`, `npm run lint`, `npm test` (as separate commands).
 - If verification fails, fix the failure before continuing.

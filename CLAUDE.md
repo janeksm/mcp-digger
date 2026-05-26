@@ -10,6 +10,8 @@ Node.js/TypeScript MCP server that gives Claude Code progressive access to .NET 
 
 ## Clean Code (Pragmatic)
 
+**Before writing, modifying, or reviewing any code, read [CC.md](CC.md).** It contains the full Node.js / TypeScript-specific rule set (async patterns, error handling, module hygiene, testing, security, performance) and complements the language-agnostic principles below.
+
 Follow these principles as defaults, not dogma. Break any rule when it clearly hurts readability or adds unnecessary complexity.
 
 - **Naming is design.** Functions, variables, and types should reveal intent. If you need a comment to explain *what* something does, rename it instead. Avoid abbreviations unless universally understood (`config`, `pkg`, `idx` are fine; `prfx`, `dsc` are not).

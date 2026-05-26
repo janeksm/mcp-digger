@@ -21,6 +21,7 @@ Full TDD development cycle from planning through verified implementation. Reads/
      - `HANDOFF.md` — if present, display session continuity before proceeding (covers the case where `/load` was skipped)
      - `DECISIONS.md` — prior technical decisions (stays in context for planning)
      - `PATTERNS.md` — established code patterns (stays in context for planning)
+     - `CC.md` — Node.js / TypeScript clean code rules (stays in context for planning and implementation)
 
 2. **Run /plan-x.** Invoke the plan-x skill with the task description. This handles:
    - Launching Codex planning in background
