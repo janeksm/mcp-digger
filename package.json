@@ -1,6 +1,6 @@
 {
   "name": "mcp-digger",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "mcpName": "io.github.janeksm/mcp-digger",
   "description": "MCP server giving AI coding agents progressive, on-demand access to .NET C# NuGet package source code.",
   "type": "module",
